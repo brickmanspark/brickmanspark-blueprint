@@ -5495,9 +5495,9 @@ export default function Home() {
     "Buildings",
     "MOCs",
     "Roads",
-    "Trains",
     "Features",
     "Space",
+    "Generate",
   ];
   const selectedSpaceFillForGeneration =
     spaceFillChoices.length > 0
@@ -6039,14 +6039,14 @@ export default function Home() {
           <p className="mt-2 text-sm leading-6 text-stone-600">
             Dimensions are entered in centimetres. Blueprint converts them to studs for snapping, grid coordinates, and baseplate alignment.
           </p>
-          <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
             {(["rectangle", "l-shape", "u-shape"] as LayoutShape[]).map((shape) => (
               <button key={shape} className={`rounded border p-3 text-sm font-semibold ${layoutShape === shape ? "border-ink bg-ink text-white" : "bg-white"}`} onClick={() => setLayoutShape(shape)}>
                 {shape === "l-shape" ? "L Shape" : shape === "u-shape" ? "U Shape" : "Rectangle"}
               </button>
             ))}
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm font-medium text-stone-700">
               {layoutShape === "u-shape" ? "Back width (cm)" : "Width (cm)"}
               <input type="number" value={layoutShape === "u-shape" ? dimensionInputs.uBackWidth : dimensionInputs.tableWidth} onChange={(event) => setDimensionInput(layoutShape === "u-shape" ? "uBackWidth" : "tableWidth", event.target.value)} onBlur={() => layoutShape === "u-shape" ? applyDimensionInput("uBackWidth", "back width", (value) => setUBackWidth(Math.max(16, cmToStuds(value)))) : applyDimensionInput("tableWidth", "table width", updateTableWidth)} className="h-10 w-full rounded border border-stone-300 px-3" />
@@ -6057,7 +6057,7 @@ export default function Home() {
             </label>
           </div>
           {layoutShape === "l-shape" && (
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="space-y-1 text-sm font-medium text-stone-700">
                 Arm width (cm)
                 <input type="number" value={dimensionInputs.lArmWidth} onChange={(event) => setDimensionInput("lArmWidth", event.target.value)} onBlur={() => applyDimensionInput("lArmWidth", "arm width", (value) => setLArmWidth(Math.max(16, cmToStuds(value))))} className="h-10 w-full rounded border border-stone-300 px-3" />
@@ -6069,7 +6069,7 @@ export default function Home() {
             </div>
           )}
           {layoutShape === "u-shape" && (
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               {[
                 ["uLeftArmLength", "Left arm length"],
                 ["uLeftArmWidth", "Left arm width"],
@@ -6131,18 +6131,23 @@ export default function Home() {
     return (
       <main className="min-h-screen bg-[#f3f0e8]">
         <header className="border-b border-stone-300 bg-white">
-          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-            <div>
-              <h1 className="text-xl font-semibold text-ink">BrickmansPark Blueprint</h1>
-              <p className="text-sm text-stone-600">Tell Blueprint what you own, then let it plan the city.</p>
+          <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-3 px-4 py-3 md:h-16 md:px-6 md:py-0">
+            <div className="min-w-0">
+              <h1 className="text-xl font-black leading-tight text-ink md:font-semibold">Blueprint</h1>
+              <p className="text-xs font-semibold text-stone-600 md:text-sm">by BrickmansPark</p>
             </div>
-            <span className="rounded bg-stone-100 px-3 py-1 text-sm font-semibold text-stone-700">
+            <span className="shrink-0 rounded bg-stone-100 px-3 py-1 text-sm font-semibold text-stone-700">
               Step {wizardStep} of {wizardSteps.length}
             </span>
           </div>
+          <div className="px-4 pb-3 md:hidden">
+            <div className="h-2 overflow-hidden rounded bg-stone-200">
+              <div className="h-full rounded bg-brick transition-all" style={{ width: `${(wizardStep / wizardSteps.length) * 100}%` }} />
+            </div>
+          </div>
         </header>
-        <section className="mx-auto grid max-w-6xl grid-cols-[220px_minmax(0,1fr)] gap-6 px-6 py-6">
-          <aside className="rounded border border-stone-300 bg-white p-3 shadow-panel">
+        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 md:px-6 md:py-6">
+          <aside className="hidden rounded border border-stone-300 bg-white p-3 shadow-panel md:block">
             {wizardSteps.map((step, index) => (
               <button
                 key={step}
@@ -6159,7 +6164,7 @@ export default function Home() {
             ))}
           </aside>
 
-          <section className="rounded border border-stone-300 bg-white p-6 shadow-panel">
+          <section className="rounded border border-stone-300 bg-white p-4 shadow-panel md:p-6">
             {wizardStep === 1 && (
               <div>
                 <h2 className="text-2xl font-semibold text-ink">Official LEGO Buildings</h2>
@@ -6170,14 +6175,14 @@ export default function Home() {
                   placeholder="Search by name or set number"
                   className="mt-5 h-11 w-full rounded border border-stone-300 px-3 outline-none focus:border-ink"
                 />
-                <div className="mt-4 grid max-h-[520px] grid-cols-3 gap-3 overflow-y-auto pr-1">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:max-h-[520px] lg:grid-cols-3 gap-3 overflow-y-auto pr-1">
                   {filteredModularBuildings.map((preset) => {
                     const selected = selectedOfficialSets.includes(preset.setNumber);
                     const modularType = preset.modularType ?? (preset.isCornerBuilding ? "corner" : "straight");
                     return (
                       <button
                         key={preset.setNumber}
-                        className={`rounded border p-3 text-left ${
+                        className={`min-h-[176px] rounded border p-3 text-left ${
                           selected ? "border-brick bg-red-50 ring-2 ring-brick/25" : "border-stone-200 hover:bg-stone-50"
                         }`}
                         onClick={() => {
@@ -6197,12 +6202,12 @@ export default function Home() {
                     );
                   })}
                 </div>
-                <div className="mt-5 flex items-center justify-between rounded bg-stone-50 p-4">
+                <div className="mt-5 flex flex-col gap-3 rounded md:flex-row md:items-center md:justify-between bg-stone-50 p-4">
                   <div className="text-sm text-stone-700">
                     <strong>Buildings Selected:</strong> {selectedOfficialSets.length}
                     <span className="ml-4"><strong>Estimated Footprint:</strong> {selectedBaseplateEstimate} Baseplates</span>
                   </div>
-                  <button className="h-10 rounded bg-ink px-5 text-sm font-semibold text-white" onClick={() => setWizardStep(2)}>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(2)}>
                     Continue
                   </button>
                 </div>
@@ -6235,7 +6240,7 @@ export default function Home() {
                       No MOCs added yet.
                     </p>
                   ) : (
-                    <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       {customMocs.map((moc) => (
                         <div key={moc.id} className="rounded border border-stone-200 bg-white p-3 shadow-sm">
                           <div className="flex items-start justify-between gap-3">
@@ -6297,7 +6302,7 @@ export default function Home() {
                   )}
                 </div>
                 {showMocForm && (
-                  <div className="mt-4 grid grid-cols-2 gap-4 rounded border border-stone-200 bg-stone-50 p-4">
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 rounded border border-stone-200 bg-stone-50 p-4">
                     <label className="space-y-1 text-sm font-medium text-stone-700">
                       Name
                       <input value={buildingName} onChange={(event) => setBuildingName(event.target.value)} className="h-10 w-full rounded border border-stone-300 px-3" />
@@ -6329,7 +6334,7 @@ export default function Home() {
                         ))}
                       </select>
                     </label>
-                    <label className="col-span-2 space-y-1 text-sm font-medium text-stone-700">
+                    <label className="md:col-span-2 space-y-1 text-sm font-medium text-stone-700">
                       Custom top-down silhouette (SVG or PNG)
                       <input
                         type="file"
@@ -6341,7 +6346,7 @@ export default function Home() {
                         {mocSilhouetteAsset ? "Custom silhouette attached." : "Optional. Blueprint uses a clean fallback footprint when blank."}
                       </span>
                     </label>
-                    <button className="col-span-2 h-10 rounded bg-ink px-4 text-sm font-semibold text-white" onClick={() => { addBuilding(); setShowMocForm(false); }}>
+                    <button className="md:col-span-2 h-10 rounded bg-ink px-4 text-sm font-semibold text-white" onClick={() => { addBuilding(); setShowMocForm(false); }}>
                       {editingMocId ? "Update MOC" : "Save MOC"}
                     </button>
                   </div>
@@ -6350,8 +6355,8 @@ export default function Home() {
                   Running total: <strong>{selectedBuildingCount}</strong> buildings, <strong>{customMocs.length}</strong> custom MOCs, <strong>{selectedBaseplateEstimate}</strong> estimated baseplates
                 </div>
                 <div className="mt-6 flex justify-between">
-                  <button className="h-10 rounded border border-stone-300 px-5 text-sm font-semibold" onClick={() => setWizardStep(1)}>Back</button>
-                  <button className="h-10 rounded bg-ink px-5 text-sm font-semibold text-white" onClick={() => setWizardStep(3)}>Continue</button>
+                  <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(1)}>Back</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(3)}>Continue</button>
                 </div>
               </div>
             )}
@@ -6360,12 +6365,12 @@ export default function Home() {
               <div>
                 <h2 className="text-2xl font-semibold text-ink">Road Inventory</h2>
                 <p className="mt-2 text-sm text-stone-600">Tell Blueprint what road modules you own.</p>
-                <div className="mt-5 flex gap-2">
+                <div className="mt-5 grid gap-2 md:flex">
                   <button className={`rounded border px-3 py-2 text-sm font-semibold ${roadInventoryMode === "unlimited" ? "bg-ink text-white" : "bg-white"}`} onClick={() => setRoadInventoryMode("unlimited")}>I don&apos;t know</button>
                   <button className={`rounded border px-3 py-2 text-sm font-semibold ${roadInventoryMode === "suggest" ? "bg-ink text-white" : "bg-white"}`} onClick={() => setRoadInventoryMode("suggest")}>Assume unlimited roads</button>
                   <button className={`rounded border px-3 py-2 text-sm font-semibold ${roadInventoryMode === "owned" ? "bg-ink text-white" : "bg-white"}`} onClick={() => setRoadInventoryMode("owned")}>Use my quantities</button>
                 </div>
-                <div className="mt-5 grid grid-cols-2 gap-5">
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
                   <div>
                     <h3 className="font-semibold text-ink">32x32 Road System</h3>
                     {roadInventoryOptions.slice(0, 5).map((option) => (
@@ -6376,7 +6381,7 @@ export default function Home() {
                     ))}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-ink">16x16 Road System</h3>
+                    <h3 className="font-semibold text-ink">16x32 Road System</h3>
                     {roadInventoryOptions.slice(5).map((option) => (
                       <label key={option.key} className="mt-3 grid grid-cols-[1fr_90px] items-center gap-3 text-sm text-stone-700">
                         {option.label.replace(" 16x32", "")}
@@ -6386,55 +6391,17 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="mt-6 flex justify-between">
-                  <button className="h-10 rounded border border-stone-300 px-5 text-sm font-semibold" onClick={() => setWizardStep(2)}>Back</button>
-                  <button className="h-10 rounded bg-ink px-5 text-sm font-semibold text-white" onClick={() => setWizardStep(4)}>Continue</button>
+                  <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(2)}>Back</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(4)}>Continue</button>
                 </div>
               </div>
             )}
 
             {wizardStep === 4 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Trains (Coming in Version 2)</p>
-                <h2 className="mt-2 text-2xl font-semibold text-ink">Trains &amp; Railways</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600">
-                  Train planning is currently being developed and will arrive in Version 2.
-                </p>
-                <div className="mt-5 rounded border border-stone-200 bg-stone-50 p-4">
-                  <p className="text-sm font-semibold text-ink">Version 2 will include:</p>
-                  <ul className="mt-3 grid gap-2 text-sm text-stone-700 sm:grid-cols-2">
-                    <li>LEGO R40 railway support</li>
-                    <li>Loop layouts</li>
-                    <li>Point-to-point layouts</li>
-                    <li>Railway corridors</li>
-                    <li>Station planning</li>
-                    <li>Elevated railways</li>
-                    <li>Train inventory tracking</li>
-                  </ul>
-                </div>
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-stone-600">
-                  For now, Blueprint will focus on generating the best city layout possible using your buildings, roads and available space.
-                </p>
-                <div className="mt-6 flex justify-between">
-                  <button className="h-10 rounded border border-stone-300 px-5 text-sm font-semibold" onClick={() => setWizardStep(3)}>Back</button>
-                  <button
-                    className="h-10 rounded bg-ink px-5 text-sm font-semibold text-white"
-                    onClick={() => {
-                      setTrainGenerator("none");
-                      setLayoutFeatureChoice("roads");
-                      setTrainPieces([]);
-                      setWizardStep(5);
-                    }}
-                  >
-                    Continue
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {wizardStep === 5 && (
-              <div>
                 <h2 className="text-2xl font-semibold text-ink">What would you like in your city?</h2>
-                <div className="mt-5 grid grid-cols-3 gap-2">
+                <p className="mt-2 text-sm text-stone-600">Choose optional public spaces and future planning areas for Blueprint to consider.</p>
+                <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
                   {spaceFillOptions.filter((option) => option.value !== "open-space").map((option) => (
                     <button key={option.value} className={`rounded border px-3 py-2 text-left text-sm font-semibold ${spaceFillChoices.includes(option.value) ? "border-ink bg-ink text-white" : "bg-white"}`} onClick={() => toggleSpaceChoice(option.value)}>
                       {option.label}
@@ -6442,24 +6409,24 @@ export default function Home() {
                   ))}
                 </div>
                 <div className="mt-6 flex justify-between">
-                  <button className="h-10 rounded border border-stone-300 px-5 text-sm font-semibold" onClick={() => setWizardStep(4)}>Back</button>
-                  <button className="h-10 rounded bg-ink px-5 text-sm font-semibold text-white" onClick={() => setWizardStep(6)}>Continue</button>
+                  <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(3)}>Back</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(5)}>Continue</button>
                 </div>
               </div>
             )}
 
-            {wizardStep === 6 && (
+            {wizardStep === 5 && (
               <div>
                 <h2 className="text-2xl font-semibold text-ink">Your Layout</h2>
                 <p className="mt-2 text-sm text-stone-600">Enter dimensions in centimetres. Blueprint converts to studs behind the scenes.</p>
-                <div className="mt-5 grid grid-cols-4 gap-2">
+                <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3 md:grid-cols-4">
                   {(["rectangle", "l-shape", "u-shape"] as LayoutShape[]).map((shape) => (
                     <button key={shape} className={`rounded border p-3 text-sm font-semibold ${layoutShape === shape ? "border-ink bg-ink text-white" : "bg-white"}`} onClick={() => setLayoutShape(shape)}>
                       {shape === "l-shape" ? "L Shape" : shape === "u-shape" ? "U Shape" : "Rectangle"}
                     </button>
                   ))}
                 </div>
-                <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="space-y-1 text-sm font-medium text-stone-700">
                     {layoutShape === "u-shape" ? "Back width (cm)" : "Width (cm)"}
                     <input type="number" value={layoutShape === "u-shape" ? dimensionInputs.uBackWidth : dimensionInputs.tableWidth} onChange={(event) => setDimensionInput(layoutShape === "u-shape" ? "uBackWidth" : "tableWidth", event.target.value)} onBlur={() => layoutShape === "u-shape" ? applyDimensionInput("uBackWidth", "back width", (value) => setUBackWidth(Math.max(16, cmToStuds(value)))) : applyDimensionInput("tableWidth", "table width", updateTableWidth)} className="h-10 w-full rounded border border-stone-300 px-3" />
@@ -6470,7 +6437,7 @@ export default function Home() {
                   </label>
                 </div>
                 {layoutShape === "l-shape" && (
-                  <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="space-y-1 text-sm font-medium text-stone-700">
                       Arm width (cm)
                       <input type="number" value={dimensionInputs.lArmWidth} onChange={(event) => setDimensionInput("lArmWidth", event.target.value)} onBlur={() => applyDimensionInput("lArmWidth", "arm width", (value) => setLArmWidth(Math.max(16, cmToStuds(value))))} className="h-10 w-full rounded border border-stone-300 px-3" />
@@ -6482,7 +6449,7 @@ export default function Home() {
                   </div>
                 )}
                 {layoutShape === "u-shape" && (
-                  <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     {[
                       ["uLeftArmLength", "Left arm length"],
                       ["uLeftArmWidth", "Left arm width"],
@@ -6531,18 +6498,40 @@ export default function Home() {
                   </select>
                 </label>
                 <div className="mt-6 flex justify-between">
-                  <button className="h-10 rounded border border-stone-300 px-5 text-sm font-semibold" onClick={() => setWizardStep(5)}>Back</button>
-                  <div className="text-right">
-                    <p className="mb-2 text-xs font-medium text-stone-600">{generationInputSummary}</p>
-                    <button
-                      className="h-10 rounded bg-brick px-5 text-sm font-semibold text-white"
-                      onClick={() => {
-                        if (validateActiveDimensionInputs()) runBlueprintGeneration();
-                      }}
-                    >
-                      Generate Blueprint
-                    </button>
-                  </div>
+                  <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(4)}>Back</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(6)}>Continue</button>
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 6 && (
+              <div>
+                <h2 className="text-2xl font-semibold text-ink">Generate Blueprint</h2>
+                <p className="mt-2 text-sm leading-6 text-stone-600">
+                  Blueprint will use your selected buildings, MOCs, roads, features, and table size to create a city plan.
+                </p>
+                <div className="mt-5 grid gap-3 rounded border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700 md:grid-cols-2">
+                  <p><strong>Official buildings:</strong> {selectedOfficialSets.length}</p>
+                  <p><strong>Custom MOCs:</strong> {customMocs.length}</p>
+                  <p><strong>Estimated size:</strong> {selectedBaseplateEstimate} baseplates</p>
+                  <p><strong>Layout:</strong> {studsToCm(layoutGeometry.width)}cm x {studsToCm(layoutGeometry.depth)}cm</p>
+                </div>
+                <p className="mt-4 rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm font-semibold text-yellow-950">
+                  Mobile result view is read-only. You can export and share the generated layout here; use a tablet or desktop for detailed editing.
+                </p>
+                <div className="mt-6 flex gap-3">
+                  <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(5)}>Back</button>
+                  <button
+                    className="h-12 flex-[2] rounded bg-brick px-5 text-sm font-semibold text-white md:h-10"
+                    onClick={() => {
+                      setTrainGenerator("none");
+                      setLayoutFeatureChoice("roads");
+                      setTrainPieces([]);
+                      if (validateActiveDimensionInputs()) runBlueprintGeneration();
+                    }}
+                  >
+                    Generate Blueprint
+                  </button>
                 </div>
               </div>
             )}
@@ -6555,17 +6544,21 @@ export default function Home() {
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[#f3f0e8]">
       <header className="shrink-0 border-b border-stone-300 bg-white">
-        <div className="flex h-16 items-center justify-between gap-3 overflow-visible px-3 sm:px-4 lg:px-6">
+        <div className="flex min-h-16 items-center justify-between gap-2 overflow-visible px-3 py-2 md:h-16 md:gap-3 md:py-0 lg:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-brick text-white">
               <Map className="h-[22px] w-[22px]" aria-hidden="true" />
             </div>
-            <div className="hidden min-w-0 sm:block">
+            <div className="min-w-0">
+              <p className="whitespace-nowrap text-sm font-black leading-tight text-ink md:hidden">Blueprint</p>
+              <p className="whitespace-nowrap text-[11px] font-black uppercase leading-tight text-stone-500 md:hidden">by BrickmansPark</p>
+            </div>
+            <div className="hidden min-w-0 md:block">
               <p className="whitespace-nowrap text-sm font-black leading-tight text-ink">BrickmansPark</p>
               <p className="whitespace-nowrap text-xs font-black uppercase leading-tight text-stone-500">Blueprint</p>
             </div>
             <input
-              className="h-10 min-w-0 max-w-[220px] flex-1 rounded border border-stone-300 bg-white px-3 text-sm font-semibold text-ink outline-none focus:border-ink lg:max-w-[320px]"
+              className="hidden h-10 min-w-0 max-w-[220px] flex-1 rounded border border-stone-300 bg-white px-3 text-sm font-semibold text-ink outline-none focus:border-ink md:block lg:max-w-[320px]"
               value={layoutName}
               onChange={(event) => setLayoutName(event.target.value)}
               aria-label="Layout name"
@@ -6573,7 +6566,7 @@ export default function Home() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="hidden items-center gap-1.5 md:flex">
               <button
                 className="flex h-10 items-center gap-2 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-45"
                 onClick={() => generateLayout(selectedSpaceFillForGeneration)}
@@ -6622,14 +6615,18 @@ export default function Home() {
               </button>
             </div>
             <button
-              className="hidden h-10 items-center gap-2 whitespace-nowrap rounded border border-stone-300 bg-white px-3 text-sm font-semibold text-ink hover:bg-stone-100 md:flex"
+              className="flex h-10 items-center gap-2 whitespace-nowrap rounded border border-stone-300 bg-white px-3 text-sm font-semibold text-ink hover:bg-stone-100"
               onClick={exportImage}
             >
               <Download size={16} aria-hidden="true" />
-              Export
+              <span className="hidden sm:inline">Export</span>
             </button>
 
-            <div className="relative">
+            <button className="h-10 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white md:hidden" onClick={() => setActiveModal("waitlist")}>
+              Waitlist
+            </button>
+
+            <div className="relative hidden md:block">
               <button
                 className="flex h-10 items-center gap-1 whitespace-nowrap rounded border border-stone-300 bg-white px-3 text-sm font-black text-ink shadow-sm hover:bg-stone-50"
                 onClick={() => setShowMoreMenu((current) => !current)}
@@ -6673,12 +6670,12 @@ export default function Home() {
         </div>
       </header>
 
-      <div className={`grid min-h-0 flex-1 gap-3 p-3 ${
+      <div className={`grid min-h-0 flex-1 gap-3 p-2 md:p-3 ${
         sidebarCollapsed
-          ? "grid-cols-[56px_minmax(0,1fr)]"
-          : "grid-cols-[56px_minmax(0,1fr)] lg:grid-cols-[minmax(260px,20vw)_minmax(0,1fr)]"
+          ? "grid-cols-1 md:grid-cols-[56px_minmax(0,1fr)]"
+          : "grid-cols-1 md:grid-cols-[56px_minmax(0,1fr)] lg:grid-cols-[minmax(260px,20vw)_minmax(0,1fr)]"
       }`}>
-        <aside className={sidebarCollapsed ? "min-h-0 overflow-hidden" : "max-lg:fixed max-lg:bottom-3 max-lg:left-3 max-lg:top-20 max-lg:z-50 max-lg:w-[min(340px,calc(100vw-24px))] min-h-0 space-y-4 overflow-y-auto pr-1"}>
+        <aside className={sidebarCollapsed ? "hidden min-h-0 overflow-hidden md:block" : "hidden min-h-0 space-y-4 overflow-y-auto pr-1 md:block max-lg:fixed max-lg:bottom-3 max-lg:left-3 max-lg:top-20 max-lg:z-50 max-lg:w-[min(340px,calc(100vw-24px))]"}>
           {sidebarCollapsed ? (
             <div className="flex h-full flex-col items-center gap-2 rounded border border-stone-300 bg-white p-2 shadow-panel">
               <button
@@ -6834,7 +6831,7 @@ export default function Home() {
             </div>
 
             {layoutShape === "l-shape" && (
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm font-medium text-stone-700">
                   Arm width (cm)
                   <input
@@ -7781,8 +7778,11 @@ export default function Home() {
                   Modular not aligned to 16x16 grid.
                 </p>
               )}
+              <p className="mt-2 rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs font-bold leading-5 text-yellow-950 md:hidden">
+                For the best editing experience, use a tablet or desktop. Mobile is view-only with pan, zoom, fit-to-screen, and export.
+              </p>
             </div>
-            <div className="flex shrink-0 gap-2">
+            <div className="hidden shrink-0 gap-2 md:flex">
               {viewMode === "build-guide" && (
                 <>
                   <button
@@ -8046,7 +8046,9 @@ export default function Home() {
                   key={piece.id}
                   role="button"
                   tabIndex={0}
-                  onPointerDown={(event) => startTrainDrag(event, piece)}
+                  onPointerDown={(event) => {
+                    if (window.innerWidth >= 768) startTrainDrag(event, piece);
+                  }}
                   onClick={() => setSelectedObject({ kind: "train", id: piece.id })}
                   title={`${piece.name} · ${piece.baseplateModule ?? baseplateModuleLabel(piece.width, piece.depth)} module · ${piece.width} x ${piece.depth} studs (${studsToCm(piece.width)} x ${studsToCm(piece.depth)} cm) · Position ${piece.x}, ${piece.y} studs (${studsToCm(piece.x)}, ${studsToCm(piece.y)} cm) · Rotation ${piece.rotation}° · ${trainElevationLabels[piece.elevationMode ?? "ground"]}`}
                   className={`group absolute select-none overflow-visible border text-zinc-950 transition-shadow ${
@@ -8091,7 +8093,7 @@ export default function Home() {
                       {piece.name}
                     </div>
                   )}
-                  <div className={`absolute bottom-[-20px] right-0 flex gap-1 opacity-0 transition-opacity ${
+                  <div className={`absolute bottom-[-20px] right-0 hidden gap-1 opacity-0 transition-opacity md:flex ${
                     selectedObject?.kind === "train" && selectedObject.id === piece.id ? "opacity-100" : ""
                   }`}>
                         <button
@@ -8119,7 +8121,9 @@ export default function Home() {
                   key={piece.id}
                   role="button"
                   tabIndex={0}
-                  onPointerDown={(event) => startDrag(event, piece)}
+                  onPointerDown={(event) => {
+                    if (window.innerWidth >= 768) startDrag(event, piece);
+                  }}
                   onClick={() => setSelectedObject({ kind: "piece", id: piece.id })}
                   onDoubleClick={() => piece.type === "building" && zoomToPiece(piece)}
                   onMouseEnter={() => setHoveredBuildGuideId(piece.id)}
@@ -8146,7 +8150,7 @@ export default function Home() {
                 >
                   {piece.type === "road" && <RoadFootprint kind={piece.roadKind} rotation={piece.rotation} width={piece.width} depth={piece.depth} />}
                   {piece.type === "road" && showRoadDebug && (
-                    <div className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded bg-white/85 p-1 text-center text-[9px] font-black leading-tight text-slate-950 shadow">
+                    <div className="pointer-events-none absolute inset-1 z-20 hidden items-center justify-center rounded bg-white/85 p-1 text-center text-[9px] font-black leading-tight text-slate-950 shadow md:flex">
                       <span>
                         {piece.roadKind ?? "road"} {piece.rotation}
                         <br />
@@ -8213,7 +8217,7 @@ export default function Home() {
                     </div>
                   )}
                   <button
-                    className="absolute bottom-1 right-14 flex h-5 w-5 items-center justify-center rounded bg-white/80 text-ink"
+                    className="absolute bottom-1 right-14 hidden h-5 w-5 items-center justify-center rounded bg-white/80 text-ink md:flex"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => rotatePiece(piece.id)}
                     aria-label={`Rotate ${piece.name}`}
@@ -8221,7 +8225,7 @@ export default function Home() {
                     <RotateCw size={12} aria-hidden="true" />
                   </button>
                   <button
-                    className="absolute bottom-1 right-8 flex h-5 w-5 items-center justify-center rounded bg-white/80 text-ink"
+                    className="absolute bottom-1 right-8 hidden h-5 w-5 items-center justify-center rounded bg-white/80 text-ink md:flex"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => {
                       setSelectedObject({ kind: "piece", id: piece.id });
@@ -8232,7 +8236,7 @@ export default function Home() {
                     <Plus size={12} aria-hidden="true" />
                   </button>
                   <button
-                    className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded bg-white/80 text-ink"
+                    className="absolute bottom-1 right-1 hidden h-5 w-5 items-center justify-center rounded bg-white/80 text-ink md:flex"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => removePiece(piece.id)}
                     aria-label={`Remove ${piece.name}`}
@@ -8312,7 +8316,7 @@ export default function Home() {
             )}
           </div>
           {viewMode === "build-guide" && (
-            <aside className="w-80 shrink-0 overflow-y-auto border-l border-stone-300 bg-white p-3">
+            <aside className="hidden w-80 shrink-0 overflow-y-auto border-l border-stone-300 bg-white p-3 md:block">
               <div className="sticky top-0 z-10 border-b border-stone-200 bg-white pb-2">
                 <h3 className="text-sm font-black uppercase tracking-wide text-ink">Build List</h3>
                 <p className="text-xs text-stone-500">Use coordinates to place each module on the table.</p>
