@@ -1,0 +1,27 @@
+{
+  "name": "brick-city-planner",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "PATH=/Users/lucareidy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH next dev",
+    "build": "PATH=/Users/lucareidy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH next build",
+    "start": "PATH=/Users/lucareidy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH next start",
+    "lint": "PATH=/Users/lucareidy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH next lint"
+  },
+  "dependencies": {
+    "html-to-image": "^1.11.11",
+    "lucide-react": "^0.468.0",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3"
+  }
+}
