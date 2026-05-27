@@ -417,16 +417,16 @@ const roadmapSeedItems: RoadmapItem[] = [
   { id: "mils-mode", title: "MILS Mode", votes: 58, status: "Planned" },
   { id: "train-station-generator", title: "Train Station Generator", votes: 41, status: "Planned" },
   { id: "rebrickable-integration", title: "Rebrickable Integration", votes: 37, status: "Planned" },
-  { id: "build-guide-mode", title: "Build Guide Mode", votes: 29, status: "Released" },
-  { id: "manual-build-mode", title: "Manual Build Mode", votes: 24, status: "Released" },
-  { id: "live-city-rating", title: "Live City Rating", votes: 18, status: "Released" },
+  { id: "build-guide-mode", title: "Build Guide Mode", votes: 29, status: "Planned" },
+  { id: "manual-build-mode", title: "Full Manual Build Mode", votes: 24, status: "Planned" },
+  { id: "live-city-rating", title: "Advanced City Ratings", votes: 18, status: "Planned" },
 ];
 
 const feedbackReasons = [
-  "Roads not realistic",
-  "Didn't use enough space",
-  "Wrong building placement",
-  "Poor district generation",
+  "Roads",
+  "Building placement",
+  "Wasted space",
+  "Future plots",
   "Other",
 ];
 
@@ -5585,6 +5585,7 @@ export default function Home() {
     setWizardStep(6);
   };
   const startAutoGenerateMode = () => {
+    setHasStartedBlueprint(true);
     setPlanningMode("auto");
     setWizardStep(1);
   };
@@ -5614,13 +5615,14 @@ export default function Home() {
           City Rating {displayCityRating}% <span className="ml-1">{liveCityAnalysis.status.icon} {liveCityAnalysis.status.label}</span>
         </p>
         <button
-          className="rounded bg-white/70 px-2 py-1 text-[11px] font-black uppercase text-ink hover:bg-white"
-          onClick={() => setShowAnalysisPanel((current) => !current)}
+          className="cursor-not-allowed rounded bg-white/70 px-2 py-1 text-[11px] font-black uppercase text-ink opacity-75"
+          disabled
+          title="Advanced city rating details are coming soon."
         >
-          {showAnalysisPanel ? "Hide Analysis" : "Show Analysis"}
+          Advanced Coming Soon
         </button>
       </div>
-      {showAnalysisPanel && (
+      {false && showAnalysisPanel && (
         <>
           <div className="mt-2 grid gap-2 text-xs md:grid-cols-2">
             <div className="rounded bg-white/55 p-2">
@@ -5687,18 +5689,30 @@ export default function Home() {
                   <div className="inline-flex rounded bg-yellow-300 px-3 py-1 text-xs font-black uppercase tracking-wide text-ink shadow-sm">
                     BrickmansPark Blueprint
                   </div>
+                  <div className="mt-4 inline-flex rounded-full border-2 border-white bg-lime-300 px-3 py-1 text-xs font-black uppercase tracking-wide text-ink shadow-sm">
+                    V1 Public Tester
+                  </div>
                   <h1 className="mt-5 max-w-4xl text-4xl font-black leading-[0.95] tracking-normal text-ink [overflow-wrap:break-word] [text-wrap:balance] sm:text-6xl lg:text-7xl">
                     Stop rebuilding your LEGO city. Plan it first.
                   </h1>
                   <p className="mt-6 max-w-2xl text-lg font-semibold leading-8 text-blue-900 sm:text-xl">
                     Tell Blueprint what LEGO sets, MOCs, roads and space you own, and generate a city layout before moving a single brick.
                   </p>
+                  <p className="mt-4 max-w-2xl rounded border border-sky-300 bg-white/80 px-4 py-3 text-sm font-bold leading-6 text-sky-950 shadow-sm">
+                    Blueprint is currently in public testing. We&apos;re actively improving generation quality based on community feedback.
+                  </p>
                   <div className="mt-8 flex flex-wrap gap-3">
                     <button
                       className="h-12 rounded bg-brick px-6 text-base font-black text-white shadow-panel hover:bg-red-700"
+                      onClick={startAutoGenerateMode}
+                    >
+                      🧱 Create My City
+                    </button>
+                    <button
+                      className="h-12 rounded border-2 border-ink bg-white px-6 text-base font-black text-ink shadow-panel hover:bg-yellow-100"
                       onClick={() => setActiveModal("waitlist")}
                     >
-                      Join Waitlist
+                      ⭐ Join Waitlist
                     </button>
                   </div>
                   <div className="mt-6 grid max-w-xl grid-cols-3 gap-2 text-xs font-black uppercase text-ink">
@@ -5753,9 +5767,9 @@ export default function Home() {
                     </p>
                     <button
                       className="mt-6 h-11 rounded bg-brick px-5 text-sm font-black text-white shadow-panel hover:bg-red-700"
-                      onClick={() => setActiveModal("waitlist")}
+                      onClick={startAutoGenerateMode}
                     >
-                      Join Waitlist
+                      Create My City
                     </button>
                   </div>
                   <ul className="grid gap-3 text-sm font-bold text-stone-800">
@@ -5783,8 +5797,8 @@ export default function Home() {
                     ["Smart Building Placement", "Position official modulars and MOCs around streets, corners and districts.", "bg-yellow-100"],
                     ["Intelligent Road Planning", "Generate road networks that serve buildings instead of filling space randomly.", "bg-sky-100"],
                     ["Future Expansion Planning", "Reserve useful plots for shops, parks, landmarks and the next modular you buy.", "bg-lime-100"],
-                    ["Live City Rating", "See buildability, city balance and expansion potential as the plan changes.", "bg-orange-100"],
-                    ["Build Guide View", "Turn a generated map into practical placement instructions for your table.", "bg-blue-100"],
+                    ["Advanced City Ratings", "Coming soon: deeper scoring and district analysis after the V1 tester period.", "bg-orange-100"],
+                    ["Full Manual Build Mode", "Coming soon: a complete drag-and-drop editor for building from scratch.", "bg-blue-100"],
                     ["Trains Coming In Version 2", "Railway planning, station layouts and elevated rail support are on the roadmap.", "bg-red-100"],
                   ].map(([title, body, tone]) => (
                     <div key={title} className={`rounded border-2 border-white ${tone} p-5 shadow-panel`}>
@@ -5990,9 +6004,12 @@ export default function Home() {
   if (!planningMode) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f3f0e8] px-6">
-        <section className="w-full max-w-4xl rounded border border-stone-300 bg-white p-8 shadow-panel">
-          <p className="text-xs font-black uppercase tracking-wide text-brick">Choose your planning mode</p>
-          <h1 className="mt-2 text-4xl font-black text-ink">How do you want to build today?</h1>
+        <section className="w-full max-w-3xl rounded border border-stone-300 bg-white p-8 shadow-panel">
+          <p className="text-xs font-black uppercase tracking-wide text-brick">Blueprint V1 Public Tester</p>
+          <h1 className="mt-2 text-4xl font-black text-ink">Create your city from what you own.</h1>
+          <p className="mt-3 text-sm leading-6 text-stone-600">
+            V1 focuses on auto-generating modular city layouts. Full manual build mode is coming soon.
+          </p>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
             <button
               className="rounded border-2 border-sky-200 bg-sky-50 p-6 text-left transition hover:border-sky-500 hover:bg-sky-100"
@@ -6005,13 +6022,13 @@ export default function Home() {
               </span>
             </button>
             <button
-              className="rounded border-2 border-yellow-200 bg-yellow-50 p-6 text-left transition hover:border-yellow-500 hover:bg-yellow-100"
-              onClick={startManualBuildMode}
+              className="cursor-not-allowed rounded border-2 border-stone-200 bg-stone-50 p-6 text-left opacity-75"
+              disabled
             >
               <span className="text-4xl" aria-hidden="true">🧱</span>
-              <span className="mt-4 block text-2xl font-black text-ink">Build Manually</span>
+              <span className="mt-4 block text-2xl font-black text-ink">Full Manual Build Mode</span>
               <span className="mt-2 block text-sm leading-6 text-stone-600">
-                Start with an empty table and design everything yourself.
+                Coming soon after the public tester release.
               </span>
             </button>
           </div>
@@ -6571,24 +6588,25 @@ export default function Home() {
                 className="flex h-10 items-center gap-2 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-45"
                 onClick={() => generateLayout(selectedSpaceFillForGeneration)}
                 disabled={planningMode !== "manual" && !hasBuildings}
-                title={planningMode === "auto" ? "Regenerate layout" : "Generate layout"}
+                title={planningMode === "auto" ? "Generate another version" : "Generate layout"}
               >
                 <Sparkles size={16} aria-hidden="true" />
-                <span className="hidden md:inline">{planningMode === "auto" ? "Regenerate" : "Generate"}</span>
+                <span className="hidden md:inline">{planningMode === "auto" ? "Generate Another Version" : "Generate"}</span>
               </button>
               <button
-                className="flex h-10 items-center gap-2 whitespace-nowrap rounded border border-sky-300 bg-sky-50 px-3 text-sm font-black text-sky-950 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-45"
-                onClick={convertGeneratedLayoutToManual}
-                disabled={planningMode !== "auto"}
+                className="flex h-10 cursor-not-allowed items-center gap-2 whitespace-nowrap rounded border border-stone-300 bg-stone-100 px-3 text-sm font-black text-stone-500"
+                disabled
+                title="Full manual build mode is coming soon."
               >
-                Edit
+                Manual Soon
               </button>
               <button
-                className="flex h-10 items-center gap-2 whitespace-nowrap rounded bg-ink px-3 text-sm font-black text-white hover:bg-black"
-                onClick={saveLayout}
+                className="flex h-10 cursor-not-allowed items-center gap-2 whitespace-nowrap rounded bg-stone-300 px-3 text-sm font-black text-stone-600"
+                disabled
+                title="Saved projects are coming soon."
               >
                 <Save size={16} aria-hidden="true" />
-                <span className="hidden sm:inline">Save</span>
+                <span className="hidden sm:inline">Save Soon</span>
               </button>
             </div>
 
@@ -7686,38 +7704,9 @@ export default function Home() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">
               Saved layouts
             </h2>
-            <div className="mt-4 space-y-2">
-              {savedLayouts.length === 0 ? (
-                <p className="text-sm text-stone-500">Saved layouts will appear here.</p>
-              ) : (
-                savedLayouts.map((layout) => (
-                  <div
-                    key={layout.id}
-                    className="flex items-center justify-between rounded border border-stone-200 bg-stone-50 px-3 py-2"
-                  >
-                    <button
-                      className="min-w-0 flex-1 text-left"
-                      onClick={() => loadLayout(layout)}
-                    >
-                      <span className="block truncate text-sm font-medium text-ink">
-                        {layout.name}
-                      </span>
-                      <span className="text-xs text-stone-500">
-                        {layout.widthCm ?? studsToCm(layout.tableWidth ?? layout.widthStuds)} x{" "}
-                        {layout.depthCm ?? studsToCm(layout.tableDepth ?? layout.depthStuds)} cm
-                      </span>
-                    </button>
-                    <button
-                      className="flex h-8 w-8 items-center justify-center rounded text-stone-500 hover:bg-stone-200 hover:text-red-700"
-                      onClick={() => deleteLayout(layout.id)}
-                      aria-label={`Delete ${layout.name}`}
-                    >
-                      <Trash2 size={15} aria-hidden="true" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+            <p className="mt-4 rounded border border-stone-200 bg-stone-50 px-3 py-3 text-sm font-semibold text-stone-600">
+              Coming Soon: saved projects, accounts and cloud syncing will arrive after the V1 public tester release.
+            </p>
           </section>
             </>
           )}
@@ -7750,7 +7739,10 @@ export default function Home() {
               <div className="mt-2 max-w-3xl">
                 {cityRatingPanel}
               </div>
-              {showAnalysisPanel && (layoutScore > 0 || pieces.length > 0) && (
+              <p className="mt-2 rounded border border-lime-300 bg-lime-50 px-3 py-2 text-xs font-bold leading-5 text-lime-950">
+                🧪 Blueprint V1 Tester: This is an early version of Blueprint. Layout generation and scoring are actively being improved.
+              </p>
+              {false && showAnalysisPanel && (layoutScore > 0 || pieces.length > 0) && (
                 <div className="mt-2 grid max-w-xl grid-cols-2 gap-2">
                   {[
                     ["Expansion Potential", expansionPotential],
@@ -7881,7 +7873,7 @@ export default function Home() {
                 )}
               </div>
             )}
-            {showAnalysisPanel && decisionLayoutNotes.length > 0 && (
+            {false && showAnalysisPanel && decisionLayoutNotes.length > 0 && (
               <div className="mt-3 rounded border border-lime-200 bg-white/80 px-3 py-2 text-xs text-stone-700 shadow-sm">
                 <p className="font-black uppercase tracking-wide text-lime-800">Why This Layout?</p>
                 <div className="mt-2 grid gap-1 sm:grid-cols-2">
@@ -7894,7 +7886,7 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {showAnalysisPanel && planningLayoutNotes.length > 0 && (
+            {false && showAnalysisPanel && planningLayoutNotes.length > 0 && (
               <details className="mt-2 rounded border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
                 <summary className="cursor-pointer font-semibold text-stone-700">
                   Layout Notes
@@ -8440,6 +8432,20 @@ export default function Home() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {blueprintReady && planningMode === "auto" && (
+        <div className="fixed bottom-5 left-5 z-40 hidden w-full max-w-sm rounded border border-yellow-300 bg-yellow-50 p-4 shadow-xl md:block">
+          <h2 className="text-sm font-black text-ink">Want access to future features?</h2>
+          <p className="mt-2 text-xs font-semibold leading-5 text-stone-700">
+            Join the waitlist for Train Planner V2, raised layout planning, advanced city ratings, full manual build mode and saved projects.
+          </p>
+          <button
+            className="mt-3 rounded bg-brick px-4 py-2 text-sm font-black text-white hover:bg-red-700"
+            onClick={() => setActiveModal("waitlist")}
+          >
+            Join Waitlist
+          </button>
         </div>
       )}
       {showClearLayoutPrompt && (
