@@ -5696,12 +5696,6 @@ export default function Home() {
                   <div className="mt-8 flex flex-wrap gap-3">
                     <button
                       className="h-12 rounded bg-brick px-6 text-base font-black text-white shadow-panel hover:bg-red-700"
-                      onClick={() => setHasStartedBlueprint(true)}
-                    >
-                      Create My City
-                    </button>
-                    <button
-                      className="h-12 rounded border-2 border-ink bg-white px-6 text-base font-black text-ink shadow-panel hover:bg-yellow-100"
                       onClick={() => setActiveModal("waitlist")}
                     >
                       Join Waitlist
@@ -5759,9 +5753,9 @@ export default function Home() {
                     </p>
                     <button
                       className="mt-6 h-11 rounded bg-brick px-5 text-sm font-black text-white shadow-panel hover:bg-red-700"
-                      onClick={() => setHasStartedBlueprint(true)}
+                      onClick={() => setActiveModal("waitlist")}
                     >
-                      Create My City
+                      Join Waitlist
                     </button>
                   </div>
                   <ul className="grid gap-3 text-sm font-bold text-stone-800">
