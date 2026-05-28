@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { toPng } from "html-to-image";
 import {
   Building2,
@@ -84,6 +85,7 @@ type TrainInventoryKey = "straight" | "curve" | "leftSwitch" | "rightSwitch" | "
 type SpaceFillChoice =
   | "future-straight"
   | "future-corner"
+  | "community-space"
   | "park"
   | "plaza"
   | "market"
@@ -98,7 +100,7 @@ type SpaceFillChoice =
 type CityStyle = "modular-downtown" | "european-town" | "modern-city" | "mixed-use" | "decide";
 type FeatureCategory = "Buildings" | "Roads" | "Trains" | "Terrain" | "UI / UX" | "Performance" | "Exporting" | "Other";
 type RoadmapStatus = "Planned" | "In Progress" | "Released";
-type ActiveModal = null | "waitlist" | "featureRequest" | "roadmap";
+type ActiveModal = null | "waitlist" | "featureRequest" | "roadmap" | "analytics";
 type CityAddOnId =
   | "park"
   | "plaza"
@@ -138,6 +140,11 @@ type TrainSupportSize = "16x16" | "16x32" | "48x48" | "96x96" | "32x32" | "48x32
 
 type CityAddOnSelection = {
   id: CityAddOnId;
+  size: AddOnSize;
+  customWidth: number;
+  customDepth: number;
+};
+type SpaceFillSizeSelection = {
   size: AddOnSize;
   customWidth: number;
   customDepth: number;
@@ -304,6 +311,8 @@ type AutoSavedProject = {
   roadInventory: Record<RoadInventoryKey, number>;
   roadInventoryMode: InventoryMode;
   cityAddOns: CityAddOnSelection[];
+  spaceFillChoices?: SpaceFillChoice[];
+  spaceFillSizes?: Partial<Record<SpaceFillChoice, SpaceFillSizeSelection>>;
   layoutFeatureChoice: LayoutFeatureChoice;
   roadSystem: RoadSystem;
   layoutShape: LayoutShape;
@@ -342,6 +351,28 @@ type LayoutFeedback = {
   reasons: string[];
   createdAt: string;
   layoutScore: number;
+  selectedBuildings?: number;
+  tableSize?: string;
+  failureReason?: string;
+};
+
+type GenerationCandidate = {
+  score: number;
+  pieces: Piece[];
+  notes: string[];
+  failedReasons: string[];
+  generationSettings: {
+    attempt: number;
+    strategy: string;
+  };
+};
+
+type AnalyticsProperty = string | number | boolean;
+type BlueprintAnalyticsEvent = {
+  id: string;
+  name: string;
+  createdAt: string;
+  properties: Record<string, AnalyticsProperty>;
 };
 
 const STORAGE_KEY = "brick-city-planner-layouts";
@@ -350,6 +381,8 @@ const FEATURE_REQUESTS_KEY = "brickmanspark-feature-requests";
 const ROADMAP_VOTES_KEY = "brickmanspark-roadmap-votes";
 const LAYOUT_FEEDBACK_KEY = "brickmanspark-layout-feedback";
 const SIDEBAR_COLLAPSED_KEY = "brickmanspark-sidebar-collapsed";
+const ANALYTICS_EVENTS_KEY = "brickmanspark-blueprint-analytics-events";
+const WIZARD_LAST_STEP_KEY = "brickmanspark-blueprint-last-wizard-step";
 const SNAP_STUDS = 8;
 const STUD_PX = 8;
 const STUD_CM = 0.8;
@@ -361,6 +394,15 @@ const ROAD_PLATE_SIZE = 32;
 const TRAIN_CORNER_CLEARANCE = 48;
 const TRAIN_TRACK_WIDTH = 8;
 const TRAIN_TRACK_LENGTH = 16;
+const wizardStepNames = [
+  "Buildings",
+  "MOCs",
+  "Roads",
+  "Features",
+  "Space",
+  "Generate",
+];
+const wizardStepName = (step: number) => wizardStepNames[step - 1] ?? "Unknown";
 const TRAIN_STRAIGHT_MODULE_WIDTH = 16;
 const TRAIN_STRAIGHT_MODULE_DEPTH = 32;
 const TRAIN_CORNER_MODULE_SIZE = 48;
@@ -431,31 +473,31 @@ const feedbackReasons = [
 ];
 
 const categoryStyles: Record<Piece["category"], string> = {
-  restaurants: "bg-orange-200 border-orange-500 text-orange-950",
-  transport: "bg-violet-200 border-violet-500 text-violet-950",
-  retail: "bg-yellow-200 border-yellow-500 text-yellow-950",
-  residential: "bg-green-200 border-green-500 text-green-950",
-  civic: "bg-blue-200 border-blue-500 text-blue-950",
-  entertainment: "bg-purple-200 border-purple-500 text-purple-950",
-  park: "bg-lime-200 border-lime-500 text-lime-950",
-  industrial: "bg-stone-300 border-stone-600 text-stone-950",
-  other: "bg-purple-100 border-purple-400 text-purple-950",
-  Road: "bg-zinc-600 border-zinc-800 text-white",
-  Future: "bg-emerald-100 border-emerald-500 text-emerald-950",
+  restaurants: "bg-orange-100/75 border-stone-400/70 text-orange-950",
+  transport: "bg-violet-100/70 border-stone-400/70 text-violet-950",
+  retail: "bg-amber-100/80 border-stone-400/70 text-amber-950",
+  residential: "bg-emerald-100/70 border-stone-400/70 text-emerald-950",
+  civic: "bg-sky-100/75 border-stone-400/70 text-sky-950",
+  entertainment: "bg-purple-100/70 border-stone-400/70 text-purple-950",
+  park: "bg-lime-100/65 border-stone-400/70 text-lime-950",
+  industrial: "bg-stone-200/85 border-stone-500/70 text-stone-950",
+  other: "bg-violet-100/60 border-stone-400/70 text-violet-950",
+  Road: "bg-zinc-500/80 border-zinc-600/80 text-white",
+  Future: "bg-emerald-50/30 border-emerald-700/25 text-emerald-950",
 };
 
 const categorySwatches: Record<Piece["category"], string> = {
-  restaurants: "#fb923c",
-  transport: "#8b5cf6",
-  retail: "#facc15",
-  residential: "#86efac",
-  civic: "#60a5fa",
-  entertainment: "#c084fc",
-  park: "#84cc16",
-  industrial: "#a8a29e",
-  other: "#d8b4fe",
-  Road: "#52525b",
-  Future: "#bbf7d0",
+  restaurants: "#f2b27f",
+  transport: "#b9a7dc",
+  retail: "#e9d37a",
+  residential: "#a9d5b3",
+  civic: "#9ec4e7",
+  entertainment: "#c7afd8",
+  park: "#a9c98d",
+  industrial: "#b8b2a8",
+  other: "#c8bdd4",
+  Road: "#6b7280",
+  Future: "#d8eadc",
 };
 
 const ratingTone = (value: number) =>
@@ -671,6 +713,7 @@ const trainInventoryOptions: Array<{ key: TrainInventoryKey; label: string }> = 
 const spaceFillOptions: Array<{ value: SpaceFillChoice; label: string }> = [
   { value: "future-straight", label: "Future straight modular plots" },
   { value: "future-corner", label: "Future corner modular plots" },
+  { value: "community-space", label: "Community space" },
   { value: "park", label: "Park" },
   { value: "plaza", label: "Plaza" },
   { value: "market", label: "Market" },
@@ -688,8 +731,23 @@ const addOnSizeLabels: Record<AddOnSize, string> = {
   small: "Small 16x16",
   medium: "Medium 16x32",
   large: "Large 32x32",
-  wide: "Wide 48x32",
+  wide: "Extra Large 48x32",
   custom: "Custom",
+};
+
+const defaultSpaceFillSizes: Partial<Record<SpaceFillChoice, SpaceFillSizeSelection>> = {
+  "future-straight": { size: "large", customWidth: 32, customDepth: 32 },
+  "future-corner": { size: "large", customWidth: 32, customDepth: 32 },
+  "community-space": { size: "large", customWidth: 32, customDepth: 32 },
+  park: { size: "large", customWidth: 32, customDepth: 32 },
+  plaza: { size: "large", customWidth: 32, customDepth: 32 },
+  market: { size: "medium", customWidth: 16, customDepth: 32 },
+  construction: { size: "large", customWidth: 32, customDepth: 32 },
+  "bus-stop": { size: "small", customWidth: 16, customDepth: 16 },
+  "outdoor-seating": { size: "small", customWidth: 16, customDepth: 16 },
+  "car-park": { size: "large", customWidth: 32, customDepth: 32 },
+  playground: { size: "medium", customWidth: 16, customDepth: 32 },
+  waterfront: { size: "wide", customWidth: 48, customDepth: 32 },
 };
 
 const modularCardFilters: Array<{ value: ModularCardFilter; label: string }> = [
@@ -805,6 +863,8 @@ const baseplateModuleLabel = (width: number, depth: number) => {
 };
 
 const snapBaseplateDimension = (value: number) => Math.max(8, snap(value));
+const snapPlanningModuleDimension = (value: number) => Math.max(16, Math.round(value / 16) * 16);
+const planningModuleSizeOptions = Array.from({ length: 10 }, (_, index) => (index + 1) * 16);
 
 const withPieceModule = <T extends { width: number; depth: number; baseplateModule?: string }>(item: T): T => ({
   ...item,
@@ -1018,8 +1078,32 @@ const addOnSizeToStuds = (addOn: CityAddOnSelection) => {
   if (addOn.size === "large") return { width: 32, depth: 32 };
   if (addOn.size === "wide") return { width: 48, depth: 32 };
   return {
-    width: snapBaseplateDimension(addOn.customWidth),
-    depth: snapBaseplateDimension(addOn.customDepth),
+    width: snapPlanningModuleDimension(addOn.customWidth),
+    depth: snapPlanningModuleDimension(addOn.customDepth),
+  };
+};
+
+const spaceFillSizeToStuds = (choice: SpaceFillChoice, selected?: SpaceFillSizeSelection) => {
+  const size = selected ?? defaultSpaceFillSizes[choice] ?? { size: "large", customWidth: 32, customDepth: 32 };
+  if (choice === "future-corner") return { width: 32, depth: 32 };
+  if (choice === "future-straight") {
+    if (size.size === "medium" || size.size === "small") return { width: 16, depth: 32 };
+    if (size.size === "wide") return { width: 48, depth: 32 };
+    if (size.size === "custom") {
+      return {
+        width: snapPlanningModuleDimension(size.customWidth),
+        depth: snapPlanningModuleDimension(size.customDepth),
+      };
+    }
+    return { width: 32, depth: 32 };
+  }
+  if (size.size === "small") return { width: 16, depth: 16 };
+  if (size.size === "medium") return { width: 16, depth: 32 };
+  if (size.size === "large") return { width: 32, depth: 32 };
+  if (size.size === "wide") return { width: 48, depth: 32 };
+  return {
+    width: snapPlanningModuleDimension(size.customWidth),
+    depth: snapPlanningModuleDimension(size.customDepth),
   };
 };
 
@@ -1073,7 +1157,7 @@ function RoadFootprint({
   const asset = roadAssetFor(kind, width, depth);
   const needsRotatedAsset = rotation === 90 || rotation === 270;
   return (
-    <div className="relative h-full w-full overflow-hidden bg-stone-300">
+    <div className="relative h-full w-full overflow-hidden bg-stone-200/70">
       <img
         src={asset}
         alt=""
@@ -1083,6 +1167,8 @@ function RoadFootprint({
           width: needsRotatedAsset ? `${(depth / Math.max(1, width)) * 100}%` : "100%",
           height: needsRotatedAsset ? `${(width / Math.max(1, depth)) * 100}%` : "100%",
           objectFit: "fill",
+          filter: "saturate(0.62) contrast(0.95)",
+          opacity: 0.92,
           transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
           transformOrigin: "center",
         }}
@@ -1193,9 +1279,9 @@ function BuildingFootprint({ piece }: { piece: Piece }) {
   const entrance = rotateSide(piece.frontSide ?? "south", 0);
   if (piece.footprintSvg) {
     return (
-      <div className="relative h-full w-full overflow-hidden bg-white/20">
+      <div className="relative h-full w-full overflow-hidden bg-white/10">
         <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-          <rect x="3" y="3" width="94" height="94" rx="3" fill={fill} stroke="#172026" strokeWidth="3" />
+          <rect x="3" y="3" width="94" height="94" rx="2" fill={fill} fillOpacity="0.76" stroke="#2f373b" strokeWidth="1.35" />
           <path
             d={
               entrance === "north"
@@ -1206,7 +1292,7 @@ function BuildingFootprint({ piece }: { piece: Piece }) {
                     ? "M3 42h11v16H3z"
                     : "M42 86h16v11H42z"
             }
-            fill="#16a34a"
+            fill="#5b8f73"
           />
         </svg>
         <img
@@ -1220,11 +1306,11 @@ function BuildingFootprint({ piece }: { piece: Piece }) {
   }
   return (
     <svg viewBox="0 0 100 100" className="h-full w-full">
-      <rect x="4" y="4" width="92" height="92" rx="4" fill={fill} stroke="#172026" strokeWidth="3" />
-      <path d="M14 18h72M14 34h72M14 50h72" stroke="#ffffff" strokeWidth="3" opacity="0.25" />
-      {piece.modularType === "corner" && <path d="M4 4h42v22H26v20H4z" fill="#fff7ed" stroke="#172026" strokeWidth="2" />}
-      {piece.modularType === "freestanding" && <rect x="18" y="18" width="64" height="64" rx="8" fill="#ffffff88" stroke="#172026" strokeWidth="2" />}
-      {piece.modularType === "end" && <path d="M4 4h20v92H4z" fill="#ffffff66" />}
+      <rect x="4" y="4" width="92" height="92" rx="2" fill={fill} fillOpacity="0.78" stroke="#2f373b" strokeWidth="1.5" />
+      <path d="M14 18h72M14 34h72M14 50h72" stroke="#ffffff" strokeWidth="2" opacity="0.18" />
+      {piece.modularType === "corner" && <path d="M4 4h42v22H26v20H4z" fill="#faf7ef" fillOpacity="0.72" stroke="#2f373b" strokeWidth="1.1" />}
+      {piece.modularType === "freestanding" && <rect x="18" y="18" width="64" height="64" rx="5" fill="#ffffff70" stroke="#2f373b" strokeWidth="1.1" />}
+      {piece.modularType === "end" && <path d="M4 4h20v92H4z" fill="#ffffff52" />}
       <path
         d={
           entrance === "north"
@@ -1235,7 +1321,7 @@ function BuildingFootprint({ piece }: { piece: Piece }) {
                 ? "M4 42h12v16H4z"
                 : "M42 84h16v12H42z"
         }
-        fill="#16a34a"
+        fill="#5b8f73"
       />
     </svg>
   );
@@ -1451,11 +1537,16 @@ export default function Home() {
   const [featureRequests, setFeatureRequests] = useState<FeatureRequest[]>([]);
   const [roadmapVotes, setRoadmapVotes] = useState<Record<string, boolean>>({});
   const [layoutFeedback, setLayoutFeedback] = useState<LayoutFeedback[]>([]);
+  const [analyticsEvents, setAnalyticsEvents] = useState<BlueprintAnalyticsEvent[]>([]);
   const [showLayoutFeedbackPrompt, setShowLayoutFeedbackPrompt] = useState(false);
   const [layoutFeedbackReasons, setLayoutFeedbackReasons] = useState<string[]>([]);
+  const [lastGenerationSummary, setLastGenerationSummary] = useState("");
+  const [failedGenerationCandidates, setFailedGenerationCandidates] = useState<GenerationCandidate[]>([]);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [dismissedBetaNotice, setDismissedBetaNotice] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [spaceFillChoices, setSpaceFillChoices] = useState<SpaceFillChoice[]>(["decide"]);
+  const [spaceFillChoices, setSpaceFillChoices] = useState<SpaceFillChoice[]>([]);
+  const [spaceFillSizes, setSpaceFillSizes] = useState<Partial<Record<SpaceFillChoice, SpaceFillSizeSelection>>>(defaultSpaceFillSizes);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [selectedTrainPresetId, setSelectedTrainPresetId] = useState(trainPresets[0].id);
   const [trainGenerator, setTrainGenerator] = useState<TrainGenerator>("none");
@@ -1479,6 +1570,7 @@ export default function Home() {
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 900, height: 620 });
+  const homepageViewedRef = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
@@ -1487,6 +1579,64 @@ export default function Home() {
   const layoutScoreRef = useRef(0);
   const layoutNotesRef = useRef<string[]>([]);
   const objectWarningRef = useRef("");
+  const deviceType = () => {
+    if (typeof window === "undefined") return "unknown";
+    if (window.innerWidth < 768) return "mobile";
+    if (window.innerWidth < 1024) return "tablet";
+    return "desktop";
+  };
+  const screenSize = () =>
+    typeof window === "undefined" ? "unknown" : `${window.innerWidth}x${window.innerHeight}`;
+  const currentAnalyticsLocation = () => {
+    if (!hasStartedBlueprint) return "homepage";
+    if (!blueprintReady) return `wizard_step_${wizardStep}`;
+    return planningMode === "manual" ? "manual_editor" : "blueprint_editor";
+  };
+  const trackBlueprintEvent = (name: string, properties: Record<string, AnalyticsProperty> = {}) => {
+    const eventProperties = {
+      device_type: deviceType(),
+      ...properties,
+    };
+    try {
+      track(name, eventProperties);
+    } catch {
+      // Analytics should never interrupt the planning flow.
+    }
+    setAnalyticsEvents((current) => {
+      const next = [
+        {
+          id: newId(),
+          name,
+          createdAt: new Date().toISOString(),
+          properties: eventProperties,
+        },
+        ...current,
+      ].slice(0, 500);
+      try {
+        window.localStorage.setItem(ANALYTICS_EVENTS_KEY, JSON.stringify(next));
+      } catch {
+        // Local beta metrics are best-effort only.
+      }
+      return next;
+    });
+  };
+  const openModal = (modal: Exclude<ActiveModal, null>) => {
+    if (modal === "roadmap") {
+      trackBlueprintEvent("roadmap_viewed", { page_location: currentAnalyticsLocation() });
+    }
+    if (modal === "waitlist") {
+      trackBlueprintEvent("waitlist_clicked", { page_location: currentAnalyticsLocation() });
+    }
+    setActiveModal(modal);
+  };
+  const completeWizardStep = (stepName: string, nextStep: number) => {
+    window.localStorage.setItem(WIZARD_LAST_STEP_KEY, stepName);
+    trackBlueprintEvent("wizard_step_completed", {
+      step: stepName,
+      next_step: nextStep,
+    });
+    setWizardStep(nextStep);
+  };
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -1536,10 +1686,12 @@ export default function Home() {
       setFeatureRequests(JSON.parse(window.localStorage.getItem(FEATURE_REQUESTS_KEY) ?? "[]") as FeatureRequest[]);
       setRoadmapVotes(JSON.parse(window.localStorage.getItem(ROADMAP_VOTES_KEY) ?? "{}") as Record<string, boolean>);
       setLayoutFeedback(JSON.parse(window.localStorage.getItem(LAYOUT_FEEDBACK_KEY) ?? "[]") as LayoutFeedback[]);
+      setAnalyticsEvents(JSON.parse(window.localStorage.getItem(ANALYTICS_EVENTS_KEY) ?? "[]") as BlueprintAnalyticsEvent[]);
     } catch {
       window.localStorage.removeItem(FEATURE_REQUESTS_KEY);
       window.localStorage.removeItem(ROADMAP_VOTES_KEY);
       window.localStorage.removeItem(LAYOUT_FEEDBACK_KEY);
+      window.localStorage.removeItem(ANALYTICS_EVENTS_KEY);
     }
   }, []);
 
@@ -1554,6 +1706,28 @@ export default function Home() {
   useEffect(() => {
     window.localStorage.setItem(LAYOUT_FEEDBACK_KEY, JSON.stringify(layoutFeedback));
   }, [layoutFeedback]);
+
+  useEffect(() => {
+    if (homepageViewedRef.current || hasStartedBlueprint) return;
+    homepageViewedRef.current = true;
+    trackBlueprintEvent("homepage_view", {
+      referrer: document.referrer || "direct",
+      screen_size: screenSize(),
+    });
+  }, [hasStartedBlueprint]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (!hasStartedBlueprint || blueprintReady) return;
+      const lastCompletedStep = window.localStorage.getItem(WIZARD_LAST_STEP_KEY) || "None";
+      trackBlueprintEvent("wizard_abandoned", {
+        last_completed_step: lastCompletedStep,
+        current_step: wizardStepName(wizardStep),
+      });
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasStartedBlueprint, blueprintReady, wizardStep]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -1912,6 +2086,8 @@ export default function Home() {
       setRoadInventory(project.roadInventory ?? roadInventory);
       setRoadInventoryMode(project.roadInventoryMode ?? "unlimited");
       setCityAddOns(project.cityAddOns ?? []);
+      setSpaceFillChoices(project.spaceFillChoices ?? []);
+      setSpaceFillSizes({ ...defaultSpaceFillSizes, ...(project.spaceFillSizes ?? {}) });
       setLayoutFeatureChoice(project.layoutFeatureChoice ?? "roads");
       setRoadSystem(project.roadSystem ?? "decide");
       setLayoutShape(project.layoutShape ?? "rectangle");
@@ -1986,6 +2162,8 @@ export default function Home() {
         roadInventory,
         roadInventoryMode,
         cityAddOns,
+        spaceFillChoices,
+        spaceFillSizes,
         layoutFeatureChoice,
         roadSystem,
         layoutShape,
@@ -2014,6 +2192,8 @@ export default function Home() {
     roadInventory,
     roadInventoryMode,
     cityAddOns,
+    spaceFillChoices,
+    spaceFillSizes,
     layoutFeatureChoice,
     roadSystem,
     layoutShape,
@@ -2301,8 +2481,13 @@ export default function Home() {
   };
 
   const updateCityAddOn = (id: CityAddOnId, updates: Partial<CityAddOnSelection>) => {
+    const nextUpdates = {
+      ...updates,
+      ...(updates.customWidth !== undefined ? { customWidth: snapPlanningModuleDimension(updates.customWidth) } : {}),
+      ...(updates.customDepth !== undefined ? { customDepth: snapPlanningModuleDimension(updates.customDepth) } : {}),
+    };
     setCityAddOns((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...updates } : item)),
+      current.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
   };
 
@@ -3202,14 +3387,72 @@ export default function Home() {
     setTrainPieces(next ?? []);
   };
 
-  const generateLayout = (confirmedSpaceFillChoices?: SpaceFillChoice[]) => {
-    if (!validateActiveDimensionInputs()) return;
+  const generateLayout = (
+    confirmedSpaceFillChoices?: SpaceFillChoice[],
+    generationOptions: { attempt?: number; commit?: boolean; skipSpaceFillPrompt?: boolean } = {},
+  ): GenerationCandidate | null => {
+    if (!validateActiveDimensionInputs()) return null;
+    const shouldCommitGeneration = generationOptions.commit ?? true;
+    const generationAttempt = generationOptions.attempt ?? 0;
+    const strategyNames = ["balanced", "horizontal-road", "vertical-road", "compact-districts", "spread-out-districts"];
+    const generationStrategy = strategyNames[generationAttempt % strategyNames.length];
     const historyBeforeGeneration = currentLayoutSnapshot();
     const wantsRoads = layoutFeatureChoice !== "neither";
     const activeSpaceFillChoices = confirmedSpaceFillChoices ?? [];
-    const shouldAskForSpaceFill = confirmedSpaceFillChoices === undefined;
+    const shouldAskForSpaceFill = confirmedSpaceFillChoices === undefined && !generationOptions.skipSpaceFillPrompt;
     const notes: string[] = [];
     const decisionNotes: string[] = [];
+    const selectedFeatures = activeSpaceFillChoices.filter((choice) => choice !== "open-space");
+    const letBlueprintDecideFeatures = activeSpaceFillChoices.includes("decide");
+    const wantsFill = (choice: SpaceFillChoice) =>
+      letBlueprintDecideFeatures || activeSpaceFillChoices.includes(choice);
+    const publicFeatureChoices: SpaceFillChoice[] = [
+      "park",
+      "community-space",
+      "plaza",
+      "market",
+      "construction",
+      "bus-stop",
+      "outdoor-seating",
+      "car-park",
+      "playground",
+      "waterfront",
+    ];
+    const wantsPublicSpace =
+      letBlueprintDecideFeatures || publicFeatureChoices.some((choice) => activeSpaceFillChoices.includes(choice));
+    const shouldAddPlannedSpace =
+      !activeSpaceFillChoices.includes("open-space") &&
+      (letBlueprintDecideFeatures || selectedFeatures.length > 0);
+    const publicFeatureNameForChoice = (choice: SpaceFillChoice) => {
+      if (choice === "community-space") return "Community Space";
+      if (choice === "park") return "Park";
+      if (choice === "plaza") return "Plaza";
+      if (choice === "market") return "Market";
+      if (choice === "construction") return "Construction Site";
+      if (choice === "bus-stop") return "Bus Stop";
+      if (choice === "outdoor-seating") return "Outdoor Seating";
+      if (choice === "car-park") return "Car Park";
+      if (choice === "playground") return "Playground";
+      if (choice === "waterfront") return "Waterfront";
+      return "";
+    };
+    const selectedPublicFeatureChoices = publicFeatureChoices.filter((choice) => activeSpaceFillChoices.includes(choice));
+    const selectedPublicFeatureName = () => {
+      if (activeSpaceFillChoices.includes("community-space")) return "Community Space";
+      if (activeSpaceFillChoices.includes("park")) return "Park";
+      if (activeSpaceFillChoices.includes("plaza")) return "Plaza";
+      if (activeSpaceFillChoices.includes("market")) return "Market";
+      if (activeSpaceFillChoices.includes("construction")) return "Construction Site";
+      if (activeSpaceFillChoices.includes("bus-stop")) return "Bus Stop";
+      if (activeSpaceFillChoices.includes("outdoor-seating")) return "Outdoor Seating";
+      if (activeSpaceFillChoices.includes("car-park")) return "Car Park";
+      if (activeSpaceFillChoices.includes("playground")) return "Playground";
+      if (activeSpaceFillChoices.includes("waterfront")) return "Waterfront";
+      if (letBlueprintDecideFeatures) return "Community Space";
+      return "";
+    };
+    console.log("selectedFeatures =", selectedFeatures);
+    notes.push(`selectedFeatures = [${selectedFeatures.join(", ") || "none"}]`);
     const usedRoadInventory: Partial<Record<RoadInventoryKey, number>> = {};
     const missingRoadInventory: Partial<Record<RoadInventoryKey, number>> = {};
     let score = 0;
@@ -3217,9 +3460,11 @@ export default function Home() {
       target[key] = (target[key] ?? 0) + count;
     };
 
-    setTrainPieces([]);
-    setTrainWarning("");
-    setTrainGenerator("none");
+    if (shouldCommitGeneration) {
+      setTrainPieces([]);
+      setTrainWarning("");
+      setTrainGenerator("none");
+    }
 
     const sourceBuildings = pieces
       .filter((piece) => piece.type === "building")
@@ -3251,7 +3496,10 @@ export default function Home() {
         depth: Math.max(8, snap(moc.depthStuds)),
       }),
     );
-    const ownedBuildings = [...selectedOfficialBuildings, ...customMocBuildings, ...sourceBuildings];
+    let ownedBuildings = [...selectedOfficialBuildings, ...customMocBuildings, ...sourceBuildings];
+    if (generationStrategy === "compact-districts") {
+      ownedBuildings = [...ownedBuildings].sort((a, b) => (b.width * b.depth) - (a.width * a.depth));
+    }
     notes.push(`Generation input: ${selectedOfficialBuildings.length} official buildings, ${customMocs.length} custom MOCs`);
     const districtForPiece = (piece: Piece): DistrictKind => {
       const name = piece.name.toLowerCase();
@@ -3263,6 +3511,9 @@ export default function Home() {
       if (piece.category === "park") return "park";
       return "mixed";
     };
+    if (generationStrategy === "spread-out-districts") {
+      ownedBuildings = [...ownedBuildings].sort((a, b) => districtForPiece(a).localeCompare(districtForPiece(b)) || a.name.localeCompare(b.name));
+    }
     const districtGroups = ownedBuildings.reduce((groups, building) => {
       const district = districtForPiece(building);
       groups[district] = [...(groups[district] ?? []), building];
@@ -3271,7 +3522,7 @@ export default function Home() {
 
     const usableSections = layoutGeometry.usableZones;
     const zone = usableSections[0];
-    if (!zone) return;
+    if (!zone) return null;
     const usableLeft = Math.min(...usableSections.map((section) => section.x));
     const usableTop = Math.min(...usableSections.map((section) => section.y));
     const usableRight = Math.max(...usableSections.map((section) => section.x + section.widthStuds));
@@ -3304,14 +3555,16 @@ export default function Home() {
     const ownedBuildingFootprintArea = ownedBuildings.reduce((sum, piece) => sum + piece.width * piece.depth, 0);
     const cityArea = Math.max(1, usableSections.reduce((sum, section) => sum + section.widthStuds * section.depthStuds, 0));
     if (shouldAskForSpaceFill && ownedBuildingFootprintArea / cityArea < 0.45) {
-      setShowSpaceFillPrompt(true);
-      setLayoutNotes([
-        "Your current buildings do not fill the full layout yet",
-        "Choose what Blueprint should add to complete the city masterplan",
-      ]);
-      return;
+      if (shouldCommitGeneration) {
+        setShowSpaceFillPrompt(true);
+        setLayoutNotes([
+          "Your current buildings do not fill the full layout yet",
+          "Choose what Blueprint should add to complete the city masterplan",
+        ]);
+      }
+      return null;
     }
-    setShowSpaceFillPrompt(false);
+    if (shouldCommitGeneration) setShowSpaceFillPrompt(false);
 
     const hasCornerBuildings = ownedBuildings.some((building) => building.modularType === "corner");
     const hasIndustrial = ownedBuildings.some((building) => building.category === "industrial");
@@ -3330,13 +3583,17 @@ export default function Home() {
     const gridTop = Math.ceil(cityZone.y / SNAP_STUDS) * SNAP_STUDS;
     const gridRight = Math.floor((cityZone.x + cityZone.widthStuds) / SNAP_STUDS) * SNAP_STUDS;
     const gridBottom = Math.floor((cityZone.y + cityZone.depthStuds) / SNAP_STUDS) * SNAP_STUDS;
+    const roadOffsetX = [0, 32, -32, 64, -64][generationAttempt % 5] ?? 0;
+    const roadOffsetY = [0, -32, 32, -64, 64][generationAttempt % 5] ?? 0;
+    const preferVerticalStrategy = generationStrategy === "vertical-road";
+    const preferHorizontalStrategy = generationStrategy === "horizontal-road";
     const roadY = clamp(
-      gridTop + Math.max(32, Math.floor((districtDepth * 0.38) / 32) * 32),
+      gridTop + Math.max(32, Math.floor((districtDepth * (preferHorizontalStrategy ? 0.5 : 0.38)) / 32) * 32) + roadOffsetY,
       gridTop,
       Math.max(gridTop, gridBottom - 32),
     );
     const roadX = clamp(
-      gridLeft + Math.max(64, Math.floor((districtWidth * 0.46) / 32) * 32),
+      gridLeft + Math.max(64, Math.floor((districtWidth * (preferVerticalStrategy ? 0.35 : 0.46)) / 32) * 32) + roadOffsetX,
       gridLeft,
       Math.max(gridLeft, gridRight - 32),
     );
@@ -3365,7 +3622,7 @@ export default function Home() {
 
     if (wantsRoads) {
       const compactCity = roadSystem === "minimal";
-      const prefersHorizontalBackbone = cityZone.widthStuds >= cityZone.depthStuds;
+      const prefersHorizontalBackbone = preferHorizontalStrategy || (!preferVerticalStrategy && cityZone.widthStuds >= cityZone.depthStuds);
       const roadInventoryKeyForKind = (roadKind: RoadKind, width = 32, depth = 32): RoadInventoryKey => {
         const isCompactRoad = width === 16 || depth === 16;
         if (roadKind === "corner") return isCompactRoad ? "corner16" : "corner32";
@@ -3449,6 +3706,56 @@ export default function Home() {
         if (prefersHorizontalBackbone) addVerticalRoad(roadX, offset, kind, name, size);
         else addHorizontalRoad(offset, roadY, kind, name, size);
       };
+      const addHorizontalBlockRoad = (section: TableSection, y: number, name: string) => {
+        const start = Math.ceil(section.x / 32) * 32;
+        const end = Math.floor((section.x + section.widthStuds - 32) / 32) * 32;
+        if (end < start) return;
+        for (let x = start; x <= end; x += 32) {
+          addHorizontalRoad(
+            x,
+            y,
+            x === start || x === end ? "dead-end" : "straight",
+            x === start || x === end ? `${name} edge connection` : name,
+          );
+        }
+      };
+      const addVerticalBlockRoad = (section: TableSection, x: number, name: string) => {
+        const start = Math.ceil(section.y / 32) * 32;
+        const end = Math.floor((section.y + section.depthStuds - 32) / 32) * 32;
+        if (end < start) return;
+        for (let y = start; y <= end; y += 32) {
+          addVerticalRoad(
+            x,
+            y,
+            y === start || y === end ? "dead-end" : "straight",
+            y === start || y === end ? `${name} edge connection` : name,
+          );
+        }
+      };
+      const internalRoadPositions = (start: number, length: number, roadWidth = 32) => {
+        const roadSpacing = generationStrategy === "spread-out-districts" ? 96 : 128;
+        if (length < 128) return [];
+        const usableStart = Math.ceil((start + 48) / 32) * 32;
+        const usableEnd = Math.floor((start + length - roadWidth - 48) / 32) * 32;
+        const positions: number[] = [];
+        for (let position = usableStart + roadSpacing; position <= usableEnd; position += roadSpacing) {
+          positions.push(position);
+        }
+        if (positions.length === 0 && length >= 160) {
+          positions.push(Math.floor((start + length / 2) / 32) * 32);
+        }
+        return Array.from(new Set(positions)).filter((position) => position >= start && position <= start + length - roadWidth);
+      };
+      const createBlockRoadsForSection = (section: TableSection, label: string) => {
+        const horizontalRows = internalRoadPositions(section.y, section.depthStuds);
+        const verticalColumns = internalRoadPositions(section.x, section.widthStuds);
+        horizontalRows.forEach((y) => {
+          addHorizontalBlockRoad(section, y, `${label} block road`);
+        });
+        verticalColumns.forEach((x) => {
+          addVerticalBlockRoad(section, x, `${label} frontage avenue`);
+        });
+      };
 
       if (layoutShape === "l-shape") {
         const mainSection = layoutGeometry.tableSections.find((section) => section.id === "rectangle-main") ?? layoutGeometry.tableSections[0];
@@ -3469,9 +3776,11 @@ export default function Home() {
           const addArmRoad = useCompactArmRoad ? addNarrowVerticalRoad : addVerticalRoad;
           addArmRoad(armRoadX, y, y === armStart ? "t-junction" : y === armEnd ? "dead-end" : "straight", y === armStart ? "L-shape district junction" : y === armEnd ? "Road terminus" : "L arm road");
         }
-        addRoadModule(armRoadX, Math.max(mainSection.y, mainSection.y + mainSection.depthStuds - 32), "plaza", "L-shape join plaza");
+        if (wantsFill("plaza")) {
+          addRoadModule(armRoadX, Math.max(mainSection.y, mainSection.y + mainSection.depthStuds - 32), "plaza", "L-shape join plaza");
+        }
         notes.push("L-shape roads use the corner join as the city anchor");
-        decisionNotes.push("Decision: Connected both arms of the L-shape with a junction and join plaza");
+        decisionNotes.push(wantsFill("plaza") ? "Decision: Connected both arms of the L-shape with a junction and join plaza" : "Decision: Connected both arms of the L-shape with a road junction");
       } else if (layoutShape === "u-shape") {
         const back = layoutGeometry.tableSections.find((section) => section.id === "u-back") ?? layoutGeometry.tableSections[0];
         const left = layoutGeometry.tableSections.find((section) => section.id === "u-left-arm") ?? layoutGeometry.tableSections[1];
@@ -3519,8 +3828,10 @@ export default function Home() {
           const rightMidY = Math.floor((right.y + right.depthStuds * 0.55) / 32) * 32;
           addNarrowHorizontalRoad(right.x, rightMidY, "t-junction", "Right arm district connector", Math.max(32, right.widthStuds));
         }
-        addRoadModule(Math.max(back.x, leftRoadX), backRoadY, "plaza", "Left back corner plaza");
-        addRoadModule(Math.min(back.x + back.widthStuds - 32, rightRoadX), backRoadY, "plaza", "Right back corner plaza");
+        if (wantsFill("plaza")) {
+          addRoadModule(Math.max(back.x, leftRoadX), backRoadY, "plaza", "Left back corner plaza");
+          addRoadModule(Math.min(back.x + back.widthStuds - 32, rightRoadX), backRoadY, "plaza", "Right back corner plaza");
+        }
         notes.push("U-shape roads use the inner frontage across the back, left arm, and right arm");
         decisionNotes.push("Decision: Planned separate districts for the U-shape back section and both arms");
       } else {
@@ -3602,8 +3913,12 @@ export default function Home() {
           }
         }
 
-        addRoadModule(Math.max(gridLeft, roadX - 32), Math.max(gridTop, roadY - 32), "plaza", "Public plaza");
+        if (wantsFill("plaza")) {
+          addRoadModule(Math.max(gridLeft, roadX - 32), Math.max(gridTop, roadY - 32), "plaza", "Public plaza");
+        }
       }
+      layoutGeometry.tableSections.forEach((section) => createBlockRoadsForSection(section, section.name));
+      decisionNotes.push("Decision: Created city blocks first, then used roads to make frontage opportunities");
       notes.push(compactCity ? "Compact streets serve the owned buildings without forcing a loop" : "Road network planned first as city blocks and districts");
       decisionNotes.push(
         prefersHorizontalBackbone
@@ -3974,6 +4289,8 @@ export default function Home() {
         if (
           road.roadKind === "plaza" ||
           road.name.includes("Local") ||
+          road.name.includes("block") ||
+          road.name.includes("frontage") ||
           road.name.includes("Industrial") ||
           road.name.includes("Compact")
         ) {
@@ -4199,27 +4516,32 @@ export default function Home() {
 
     const contextualFutureName = (district: DistrictKind, fallback: string) => {
       if (fallback.includes("Corner")) return "Future Corner Modular 32x32";
+      if (/Future Straight Modular \d+x\d+/.test(fallback)) return fallback;
+      if (fallback.includes("48x32")) return "Future Straight Modular 48x32";
       if (fallback.includes("16x32")) return "Future Straight Modular 16x32";
       if (fallback.includes("32x16")) return "Future Straight Modular 32x16";
       if (fallback.includes("Straight")) return "Future Straight Modular 32x32";
-      if (district === "park") return "Community Space";
+      if (district === "park" && wantsPublicSpace) return selectedPublicFeatureName() || "Community Space";
       return fallback;
     };
 
     const futurePlotName = (rect: { x: number; y: number; width: number; depth: number }) => {
       const facesRoad = Boolean(fullRoadFacingSide(rect));
-      if (rect.width === 16 && rect.depth === 16) return "Detail Area 16x16";
-      if (rect.width === 8 && rect.depth === 16) return "Detail Area 8x16";
-      if (rect.width === 16 && rect.depth === 8) return "Detail Area 16x8";
-      if (isRoadCornerPlot(rect)) return "Future Corner Modular 32x32";
-      if (facesRoad && rect.width === 16 && rect.depth === 32) return "Future Straight Modular 16x32";
-      if (facesRoad && rect.width === 32 && rect.depth === 16) return "Future Straight Modular 32x16";
-      if (facesRoad) return "Future Straight Modular 32x32";
-      return "Community Space";
+      if (wantsPublicSpace) {
+        if (rect.width === 16 && rect.depth === 16) return selectedPublicFeatureName() || "Detail Area 16x16";
+        if (rect.width === 8 && rect.depth === 16) return selectedPublicFeatureName() || "Detail Area 8x16";
+        if (rect.width === 16 && rect.depth === 8) return selectedPublicFeatureName() || "Detail Area 16x8";
+      }
+      if (wantsFill("future-corner") && isRoadCornerPlot(rect)) return "Future Corner Modular 32x32";
+      if (wantsFill("future-straight") && facesRoad && rect.width === 16 && rect.depth === 32) return "Future Straight Modular 16x32";
+      if (wantsFill("future-straight") && facesRoad && rect.width === 32 && rect.depth === 16) return "Future Straight Modular 32x16";
+      if (wantsFill("future-straight") && facesRoad) return "Future Straight Modular 32x32";
+      return "";
     };
 
     const makeFutureZone = (name: string, width: number, depth: number, x: number, y: number): Piece | null => {
       const rect = { x, y, width, depth };
+      if (!name) return null;
       const validModules = new Set(["8x16", "16x8", "16x16", "16x32", "32x16", "32x32", "48x32", "32x48", "48x48", "64x32", "32x64"]);
       if (!validModules.has(`${width}x${depth}`)) return null;
       if (x % SNAP_STUDS !== 0 || y % SNAP_STUDS !== 0 || width % SNAP_STUDS !== 0 || depth % SNAP_STUDS !== 0) return null;
@@ -4228,7 +4550,32 @@ export default function Home() {
       const fullRoadSide = fullRoadFacingSide(rect);
       const accessSide = publicAccessSide(rect);
       const frontSide = fullRoadSide ?? accessSide ?? "south";
-      const isPublicSpace = isDetailArea || name.includes("Park") || name.includes("Plaza") || name.includes("Market") || name.includes("Community") || name.includes("Playground") || name.includes("Outdoor Seating") || name.includes("Construction") || name.includes("Car Park") || name.includes("Waterfront");
+      const isPublicSpace = isDetailArea || name.includes("Park") || name.includes("Plaza") || name.includes("Market") || name.includes("Community") || name.includes("Playground") || name.includes("Outdoor Seating") || name.includes("Construction") || name.includes("Car Park") || name.includes("Bus Stop") || name.includes("Waterfront");
+      if (isPublicSpace && !wantsPublicSpace) return null;
+      if (name.includes("Community") && !wantsFill("community-space")) return null;
+      if (name.includes("Plaza") && !wantsFill("plaza")) return null;
+      if (name.includes("Park") && !wantsFill("park")) return null;
+      if (name.includes("Market") && !wantsFill("market")) return null;
+      if (name.includes("Construction") && !wantsFill("construction")) return null;
+      if (name.includes("Bus Stop") && !wantsFill("bus-stop")) return null;
+      if (name.includes("Outdoor Seating") && !wantsFill("outdoor-seating")) return null;
+      if (name.includes("Car Park") && !wantsFill("car-park")) return null;
+      if (name.includes("Playground") && !wantsFill("playground")) return null;
+      if (name.includes("Waterfront") && !wantsFill("waterfront")) return null;
+      if (
+        !letBlueprintDecideFeatures &&
+        (name.includes("Straight Modular") || name.includes("Future 16x32 Modular") || name.includes("Future 32x16 Modular"))
+      ) {
+        const selectedSize = spaceFillSizeToStuds("future-straight", spaceFillSizes["future-straight"]);
+        if (width !== selectedSize.width || depth !== selectedSize.depth) return null;
+      }
+      if (!letBlueprintDecideFeatures && isPublicSpace) {
+        const matchingPublicChoice = publicFeatureChoices.find((choice) => publicFeatureNameForChoice(choice) === name);
+        if (matchingPublicChoice) {
+          const selectedSize = spaceFillSizeToStuds(matchingPublicChoice, spaceFillSizes[matchingPublicChoice]);
+          if (width !== selectedSize.width || depth !== selectedSize.depth) return null;
+        }
+      }
       const containingBlock = cityBlocks.find(
         (block) =>
           rect.x >= block.x &&
@@ -4259,11 +4606,7 @@ export default function Home() {
             ? "Future Straight Modular 16x32"
             : name === "Future 32x16 Modular"
               ? "Future Straight Modular 32x16"
-              : isDetailArea
-                ? name
-                : isPublicSpace
-                  ? "Community Space"
-                  : name;
+              : name;
       const future = withPieceModule({
         id: newId(),
         type: "future" as const,
@@ -4313,6 +4656,22 @@ export default function Home() {
 
     const addInfillRoad = (rect: { x: number; y: number; width: number; depth: number }) => {
       if (!wantsRoads || !canOccupyInfillRect(rect, overhangPolicy.minSupport, false)) return null;
+      const touchesLayoutEdge =
+        rect.x <= cityZone.x ||
+        rect.y <= cityZone.y ||
+        rect.x + rect.width >= cityZone.x + cityZone.widthStuds ||
+        rect.y + rect.depth >= cityZone.y + cityZone.depthStuds;
+      const connectsToRoad =
+        roadPieces.length === 0 ||
+        roadPieces.some((road) => {
+          const horizontalOverlap = rect.x < road.x + road.width && rect.x + rect.width > road.x;
+          const verticalOverlap = rect.y < road.y + road.depth && rect.y + rect.depth > road.y;
+          return (
+            (horizontalOverlap && (rect.y === road.y + road.depth || rect.y + rect.depth === road.y)) ||
+            (verticalOverlap && (rect.x === road.x + road.width || rect.x + rect.width === road.x))
+          );
+        });
+      if (!touchesLayoutEdge && !connectsToRoad) return null;
       const road: Piece = {
         id: newId(),
         type: "road",
@@ -4407,10 +4766,6 @@ export default function Home() {
       return null;
     };
 
-    const wantsFill = (choice: SpaceFillChoice) =>
-      activeSpaceFillChoices.includes("decide") || activeSpaceFillChoices.includes(choice);
-    const shouldAddPlannedSpace =
-      !activeSpaceFillChoices.includes("open-space");
     const canPlanFutureZones = allOwnedBuildingsPlaced;
     const addOnFutureZones = canPlanFutureZones
       ? cityAddOns
@@ -4426,6 +4781,16 @@ export default function Home() {
 
     const plannedFutureZones: Piece[] = [];
 
+    const futureStraightSize = spaceFillSizeToStuds("future-straight", spaceFillSizes["future-straight"]);
+    const publicFeatureSpecs = (letBlueprintDecideFeatures
+      ? [{ choice: "community-space" as SpaceFillChoice, name: "Community Space", width: 32, depth: 32 }]
+      : selectedPublicFeatureChoices
+          .map((choice) => {
+            const size = spaceFillSizeToStuds(choice, spaceFillSizes[choice]);
+            return { choice, name: publicFeatureNameForChoice(choice), width: size.width, depth: size.depth };
+          })
+          .filter((spec) => Boolean(spec.name))
+    );
     const futureSpecs: Array<{
       name: string;
       width: number;
@@ -4434,11 +4799,27 @@ export default function Home() {
       enabled: boolean;
     }> = [
       { name: "Future Corner Modular 32x32", width: 32, depth: 32, preference: "near-road", enabled: wantsRoads && wantsFill("future-corner") },
-      { name: "Future Straight Modular 32x32", width: 32, depth: 32, preference: "near-road", enabled: wantsRoads && wantsFill("future-straight") },
-      { name: "Future 16x32 Modular", width: 16, depth: 32, preference: "near-road", enabled: wantsRoads && wantsFill("future-straight") && cityZone.widthStuds >= 128 },
-      { name: "Future 32x16 Modular", width: 32, depth: 16, preference: "near-road", enabled: wantsRoads && wantsFill("future-straight") && cityZone.widthStuds >= 128 },
-      { name: "Community Space", width: 32, depth: 32, preference: "near-road", enabled: wantsFill("decide") || wantsFill("park") || wantsFill("plaza") || wantsFill("market") || wantsFill("outdoor-seating") || wantsFill("playground") },
-      { name: "Community Space", width: 16, depth: 16, preference: "near-road", enabled: wantsFill("decide") || wantsFill("park") || wantsFill("plaza") || wantsFill("market") || wantsFill("outdoor-seating") || wantsFill("playground") },
+      {
+        name:
+          futureStraightSize.width === 16 && futureStraightSize.depth === 32
+            ? "Future 16x32 Modular"
+            : futureStraightSize.width === 32 && futureStraightSize.depth === 16
+              ? "Future 32x16 Modular"
+              : futureStraightSize.width === 48 && futureStraightSize.depth === 32
+                ? "Future Straight Modular 48x32"
+                : "Future Straight Modular 32x32",
+        width: futureStraightSize.width,
+        depth: futureStraightSize.depth,
+        preference: "near-road",
+        enabled: wantsRoads && wantsFill("future-straight"),
+      },
+      ...publicFeatureSpecs.map((spec) => ({
+        name: spec.name,
+        width: spec.width,
+        depth: spec.depth,
+        preference: "near-road" as const,
+        enabled: wantsPublicSpace,
+      })),
     ];
 
     if (canPlanFutureZones) futureSpecs.forEach((spec) => {
@@ -4464,31 +4845,27 @@ export default function Home() {
           return bDistrictCount - aDistrictCount;
         });
       let candidateFutureCount = 0;
-      for (const candidate of futureCandidatePool) {
-        if (candidateFutureCount >= 18) break;
-        const rect = { x: candidate.x, y: candidate.y, width: 32, depth: 32 };
-        const district = candidate.district ?? districtForPoint(rect);
-        const name =
-          candidate.placement === "corner" && isRoadCornerPlot(rect)
-            ? contextualFutureName(district, "Future Corner Modular 32x32")
-            : fullRoadFacingSide(rect)
-              ? contextualFutureName(district, "Future Straight Modular 32x32")
-              : "";
-        if (!name) continue;
-        const zone = makeFutureZone(name, 32, 32, rect.x, rect.y);
-        if (zone) {
-          plannedFutureZones.push(zone);
-          candidateFutureCount += 1;
-        }
-      }
-      for (const candidate of futureCandidatePool) {
-        if (candidateFutureCount >= 24) break;
-        const rect = { x: candidate.x, y: candidate.y, width: 16, depth: 32 };
-        if (!fullRoadFacingSide(rect)) continue;
-        const zone = makeFutureZone("Future 16x32 Modular", 16, 32, rect.x, rect.y);
-        if (zone) {
-          plannedFutureZones.push(zone);
-          candidateFutureCount += 1;
+      if (wantsFill("future-corner") || wantsFill("future-straight")) {
+        for (const candidate of futureCandidatePool) {
+          if (candidateFutureCount >= 18) break;
+          const isCornerCandidate = candidate.placement === "corner" && isRoadCornerPlot({ x: candidate.x, y: candidate.y, width: 32, depth: 32 });
+          const targetSize = isCornerCandidate && wantsFill("future-corner")
+            ? { width: 32, depth: 32 }
+            : futureStraightSize;
+          const rect = { x: candidate.x, y: candidate.y, width: targetSize.width, depth: targetSize.depth };
+          const district = candidate.district ?? districtForPoint(rect);
+          const name =
+            isCornerCandidate && wantsFill("future-corner")
+              ? contextualFutureName(district, "Future Corner Modular 32x32")
+              : fullRoadFacingSide(rect) && wantsFill("future-straight")
+                ? contextualFutureName(district, `Future Straight Modular ${targetSize.width}x${targetSize.depth}`)
+                : "";
+          if (!name) continue;
+          const zone = makeFutureZone(name, rect.width, rect.depth, rect.x, rect.y);
+          if (zone) {
+            plannedFutureZones.push(zone);
+            candidateFutureCount += 1;
+          }
         }
       }
 
@@ -4525,13 +4902,16 @@ export default function Home() {
       const fineGridRight = Math.floor((cityZone.x + cityZone.widthStuds) / SNAP_STUDS) * SNAP_STUDS;
       const fineGridBottom = Math.floor((cityZone.y + cityZone.depthStuds) / SNAP_STUDS) * SNAP_STUDS;
       const finalInfillSpecs = [
-        { name: "Future Straight Modular 32x32", width: 32, depth: 32 },
-        { name: "Future 16x32 Modular", width: 16, depth: 32 },
-        { name: "Future 32x16 Modular", width: 32, depth: 16 },
-        { name: "Future Detail Zone 16x16", width: 16, depth: 16 },
-        { name: "Future Detail Zone 8x16", width: 8, depth: 16 },
-        { name: "Future Detail Zone 16x8", width: 16, depth: 8 },
-        { name: "Community Space", width: 32, depth: 32 },
+        ...(wantsFill("future-straight")
+          ? [
+              {
+                name: `Future Straight Modular ${futureStraightSize.width}x${futureStraightSize.depth}`,
+                width: futureStraightSize.width,
+                depth: futureStraightSize.depth,
+              },
+            ]
+          : []),
+        ...publicFeatureSpecs.map((spec) => ({ name: spec.name, width: spec.width, depth: spec.depth })),
       ];
       const finalYValues: number[] = [];
       const finalXValues: number[] = [];
@@ -4589,7 +4969,7 @@ export default function Home() {
       }
     }
     let lateInfillCount = 0;
-    if (canPlanFutureZones) [...unusedBaseplateCells]
+    if (canPlanFutureZones && shouldAddPlannedSpace) [...unusedBaseplateCells]
       .sort((a, b) => b.y - a.y || b.x - a.x)
       .forEach((cell) => {
         if (lateInfillCount >= 12) return;
@@ -4698,6 +5078,55 @@ export default function Home() {
     const hasPublicSpaces = parkPlazaArea > 0 || roadPieces.some((piece) => piece.roadKind === "plaza");
     const largeDeadZone = unusedArea >= 32 * 32 * 4;
     const generatedRoadMismatches = roadMismatchMessages(roadPieces);
+    const buildingsOverlappingRoads = placedBuildings.filter((building) => roadPieces.some((road) => rectsOverlap(building, road)));
+    const generatedOutsideObjects = [...roadPieces, ...placedBuildings, ...futureZones].filter((piece) => !placementAllowed(piece));
+    const layoutHasNoRoadAccess = wantsRoads && placedBuildings.length > 0 && buildingFacingCount === 0;
+    const unusedCellKeys = new Set(unusedBaseplateCells.map((cell) => `${cell.x},${cell.y}`));
+    const maxConsecutiveUnusedModules = (() => {
+      let maxRun = 0;
+      for (let y = gridTop; y <= gridBottom - 32; y += 32) {
+        let run = 0;
+        for (let x = gridLeft; x <= gridRight - 32; x += 32) {
+          if (unusedCellKeys.has(`${x},${y}`)) {
+            run += 1;
+            maxRun = Math.max(maxRun, run);
+          } else {
+            run = 0;
+          }
+        }
+      }
+      for (let x = gridLeft; x <= gridRight - 32; x += 32) {
+        let run = 0;
+        for (let y = gridTop; y <= gridBottom - 32; y += 32) {
+          if (unusedCellKeys.has(`${x},${y}`)) {
+            run += 1;
+            maxRun = Math.max(maxRun, run);
+          } else {
+            run = 0;
+          }
+        }
+      }
+      return maxRun;
+    })();
+    const largeConsecutiveEmptyRun = maxConsecutiveUnusedModules > 2;
+    const largeCentralVoid = unusedBaseplateCells.filter((cell) => {
+      const nearOuterEdge =
+        cell.x <= cityZone.x + 32 ||
+        cell.y <= cityZone.y + 32 ||
+        cell.x + cell.width >= cityZone.x + cityZone.widthStuds - 32 ||
+        cell.y + cell.depth >= cityZone.y + cityZone.depthStuds - 32;
+      const hasAdjacentRoad = Boolean(publicAccessSide(cell) || fullRoadFacingSide(cell));
+      return !nearOuterEdge && !hasAdjacentRoad;
+    }).length >= 4;
+    const isolatedBuildings = placedBuildings.filter((building) => {
+      const hasNearbyBuilding = placedBuildings.some(
+        (other) =>
+          other.id !== building.id &&
+          Math.abs(other.x - building.x) <= 96 &&
+          Math.abs(other.y - building.y) <= 96,
+      );
+      return !hasNearbyBuilding && !publicAccessSide(building) && !fullRoadFacingSide(building);
+    });
     const generatedQualityWarnings = [
       unplacedOwnedBuildings.length > 0 ? `${unplacedOwnedBuildings.length} owned buildings not placed` : "",
       placedBuildings.length > buildingFacingCount ? `${placedBuildings.length - buildingFacingCount} buildings do not face roads or public space` : "",
@@ -4705,10 +5134,16 @@ export default function Home() {
       wantsRoads && roadPieces.length === 0 ? "Road network is missing" : "",
       disconnectedRoads.length > 0 ? `${disconnectedRoads.length} disconnected road segments` : "",
       generatedRoadMismatches.length > 0 ? `${generatedRoadMismatches.length} road connection mismatches` : "",
+      buildingsOverlappingRoads.length > 0 ? `${buildingsOverlappingRoads.length} buildings overlap roads` : "",
+      generatedOutsideObjects.length > 0 ? `${generatedOutsideObjects.length} objects outside usable table space` : "",
+      layoutHasNoRoadAccess ? "Layout has no road access" : "",
       futureModularWithoutRoad.length > 0 ? `${futureModularWithoutRoad.length} future modular plots lack road frontage` : "",
       cornerPlotsOffCorner.length > 0 ? `${cornerPlotsOffCorner.length} future corner plots are not on corners` : "",
-      hasPublicSpaces ? "" : "No park, plaza, or public space included",
+      wantsPublicSpace && !hasPublicSpaces ? "Selected public space was not included" : "",
       largeDeadZone ? "Large unused area detected" : "",
+      largeConsecutiveEmptyRun ? "More than 2 consecutive empty modules between roads" : "",
+      largeCentralVoid ? "Large central void detected" : "",
+      isolatedBuildings.length > 0 ? `${isolatedBuildings.length} isolated buildings detected` : "",
       layoutShape === "u-shape" && uBalancedSections < 3 ? "U-shape districts are not connected across all sections" : "",
     ].filter(Boolean);
 
@@ -4725,6 +5160,9 @@ export default function Home() {
     blueprintScore -= Math.max(0, ownedCornerBuildings - cornerBuildingsOnCorners) * 10;
     blueprintScore -= disconnectedRoads.length * 10;
     if (largeDeadZone) blueprintScore -= 20;
+    if (largeConsecutiveEmptyRun) blueprintScore -= 12;
+    if (largeCentralVoid) blueprintScore -= 18;
+    blueprintScore -= isolatedBuildings.length * 8;
     score = clamp(Math.round(blueprintScore), 0, 100);
     if (layoutShape === "u-shape" && placedRatio >= 1 && uBalancedSections === 3 && !largeDeadZone && connectedRoadRatio >= 0.85) {
       score = Math.max(score, 82);
@@ -4736,7 +5174,7 @@ export default function Home() {
       notes.push(`Blueprint could not place ${building.name} because the table is too small or the road layout uses too much space.`);
     });
     notes.push(`${cornerBuildingsOnCorners} of ${ownedCornerBuildings} corner buildings placed on road junctions`);
-    notes.push(`${buildingFacingCount} buildings facing roads, plaza, or open space`);
+    notes.push(`${buildingFacingCount} buildings facing roads${hasPublicSpaces ? ", public space," : ""} or open space`);
     if (categories.size > 1) notes.push(`${categories.size} loose districts formed from owned buildings`);
     if (uSectionCounts) {
       notes.push(`U-shape section balance: back ${uSectionCounts.back}, left arm ${uSectionCounts.left}, right arm ${uSectionCounts.right}`);
@@ -4752,11 +5190,14 @@ export default function Home() {
       notes.push("Road network generated beneath buildings");
       decisionNotes.push("Decision: Connected districts with a main road and side streets");
     }
-    if (!wantsRoads) notes.push("Buildings arranged around plaza/open public space");
+    if (!wantsRoads) notes.push(hasPublicSpaces ? "Buildings arranged around public space" : "Buildings arranged within available space");
     notes.push(
       `Layout utilisation score ${utilisationScore}%: owned ${pct(ownedBuildingArea)}%, roads ${pct(roadArea)}%, future builds ${pct(futureArea)}%, parks/plazas ${pct(parkPlazaArea)}%, unused ${pct(unusedArea)}%`,
     );
     if (largeDeadZone) notes.push("Large unused area detected");
+    if (largeConsecutiveEmptyRun) notes.push("More than 2 consecutive empty modules between roads");
+    if (largeCentralVoid) notes.push("Large central void detected");
+    if (isolatedBuildings.length > 0) notes.push("Buildings are separated by large unused areas");
     if (disconnectedRoads.length > 0) notes.push("Road segment does not connect to anything");
     if (futureModularWithoutRoad.length > 0) notes.push("Future modular does not face a road");
     if (cornerPlotsOffCorner.length > 0) notes.push("Corner modular plot is not on a corner");
@@ -4798,12 +5239,25 @@ export default function Home() {
       const unusedRoadList = formatInventory(unusedRoads, roadInventoryLabels);
       if (unusedRoadList.length > 0) notes.push(`Unused road inventory: ${unusedRoadList.join(", ")}`);
     }
+    const finalPieces = [...roadPieces, ...placedBuildings, ...futureZones].map((piece) => normalizePiece(withPieceModule(piece)));
+    const candidate: GenerationCandidate = {
+      score,
+      pieces: finalPieces,
+      notes: [...decisionNotes, ...notes],
+      failedReasons: generatedQualityWarnings,
+      generationSettings: {
+        attempt: generationAttempt + 1,
+        strategy: generationStrategy,
+      },
+    };
+    if (!shouldCommitGeneration) return candidate;
     pushHistory("Generated layout", historyBeforeGeneration);
     setObjectWarning(placedBuildings.length < ownedBuildings.length ? "This object is outside your usable table space." : "");
     setLayoutScore(score);
-    setLayoutNotes([...decisionNotes, ...notes]);
-    setPieces([...roadPieces, ...placedBuildings, ...futureZones].map((piece) => normalizePiece(withPieceModule(piece))));
+    setLayoutNotes(candidate.notes);
+    setPieces(finalPieces);
     fitToScreen();
+    return candidate;
   };
 
   const saveLayout = () => {
@@ -4963,6 +5417,10 @@ export default function Home() {
 
   const exportImage = async () => {
     if (!gridRef.current) return;
+    trackBlueprintEvent("export_png", {
+      city_rating: displayCityRating,
+      building_count: pieces.filter((piece) => piece.type === "building").length,
+    });
 
     const dataUrl = await toPng(gridRef.current, {
       cacheBust: true,
@@ -5295,6 +5753,11 @@ export default function Home() {
     const tooManyRoads = roads.length > Math.max(8, buildings.length * 3 + 6);
     const tooFewRoads = buildings.length > 0 && roads.length < Math.max(1, Math.ceil(buildings.length / 3));
     const hasLargeUnusedArea = utilisation < (buildings.length > 0 ? 35 : 15);
+    const publicSpaceRequested =
+      spaceFillChoices.includes("decide") ||
+      ["community-space", "park", "plaza", "market", "construction", "bus-stop", "outdoor-seating", "car-park", "playground", "waterfront"].some((choice) =>
+        spaceFillChoices.includes(choice as SpaceFillChoice),
+      );
     let score = 25;
     if (buildings.length > 0) score += 10;
     score += Math.round((buildingsFacingRoads / Math.max(1, buildings.length)) * 18);
@@ -5309,8 +5772,8 @@ export default function Home() {
     score += landmarks.length > 0 ? 4 : 0;
     if (tooManyRoads) score -= 8;
     if (tooFewRoads) score -= 8;
-    if (parks.length === 0) score -= 5;
-    if (publicSpaces.length === 0) score -= 5;
+    if (publicSpaceRequested && parks.length === 0) score -= 5;
+    if (publicSpaceRequested && publicSpaces.length === 0) score -= 5;
     if (hasLargeUnusedArea) score -= 10;
     if (cornerBuildings.length > cornerOnRoadCorners) score -= (cornerBuildings.length - cornerOnRoadCorners) * 5;
     score = clamp(Math.round(score), 0, 100);
@@ -5331,8 +5794,8 @@ export default function Home() {
       disconnectedRoads.length > 0 ? `${disconnectedRoads.length} isolated road segments` : "",
       tooManyRoads ? "Too many roads for the current city density" : "",
       tooFewRoads ? "Too few roads serving buildings" : "",
-      parks.length === 0 ? "No park space included" : "",
-      publicSpaces.length === 0 ? "No public plaza or market included" : "",
+      publicSpaceRequested && parks.length === 0 ? "Selected park/community space is missing" : "",
+      publicSpaceRequested && publicSpaces.length === 0 ? "Selected public space is missing" : "",
       hasLargeUnusedArea ? "Large unused area detected" : "",
       ...roadMismatches.slice(0, 2),
     ].filter(Boolean);
@@ -5347,7 +5810,7 @@ export default function Home() {
       utilisation,
       buildingsFacingRoads,
     };
-  }, [pieces, layoutGeometry.usableZones, layoutGeometry.blockedZones]);
+  }, [pieces, layoutGeometry.usableZones, layoutGeometry.blockedZones, spaceFillChoices]);
   const displayCityRating = liveCityAnalysis.score || layoutScore;
   const expansionPotential = layoutUtilisationNote
     ? Number(layoutUtilisationNote.match(/(\d+)%/)?.[1] ?? layoutScore)
@@ -5384,6 +5847,35 @@ export default function Home() {
       (32 * 32),
   );
   const generationInputSummary = `${selectedOfficialPresets.length} official buildings selected · ${customMocs.length} custom MOCs added`;
+  const analyticsDashboardMetrics = useMemo(() => {
+    const countEvent = (name: string) => analyticsEvents.filter((event) => event.name === name).length;
+    const layoutGeneratedEvents = analyticsEvents.filter((event) => event.name === "layout_generated");
+    const averageCityRating =
+      layoutGeneratedEvents.length === 0
+        ? 0
+        : Math.round(
+            layoutGeneratedEvents.reduce((sum, event) => sum + Number(event.properties.city_rating ?? 0), 0) /
+              layoutGeneratedEvents.length,
+          );
+    const homepageViews = countEvent("homepage_view");
+    const createClicks = countEvent("create_city_clicked");
+    const wizardCompletions = countEvent("wizard_completed");
+    const layoutGenerations = countEvent("layout_generated");
+    const percentage = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+    return {
+      homepageViews,
+      createClicks,
+      wizardCompletions,
+      layoutGenerations,
+      averageCityRating,
+      generateAnotherRate: percentage(countEvent("generate_another_version"), Math.max(1, layoutGenerations)),
+      exportRate: percentage(countEvent("export_png"), Math.max(1, layoutGenerations)),
+      feedbackSubmissions: countEvent("feedback_submitted"),
+      waitlistSignups: countEvent("waitlist_submitted"),
+      createClickRate: percentage(createClicks, Math.max(1, homepageViews)),
+      wizardCompletionRate: percentage(wizardCompletions, Math.max(1, createClicks)),
+    };
+  }, [analyticsEvents]);
   const trainSupportRect = (piece: TrainPiece) => {
     const size = piece.supportSize ?? "16x32";
     const [supportWidth, supportDepth] =
@@ -5491,23 +5983,72 @@ export default function Home() {
       (modularFilter === "civic" && preset.category === "civic");
     return matchesSearch && matchesFilter;
   });
-  const wizardSteps = [
-    "Buildings",
-    "MOCs",
-    "Roads",
-    "Features",
-    "Space",
-    "Generate",
-  ];
-  const selectedSpaceFillForGeneration =
-    spaceFillChoices.length > 0
-      ? spaceFillChoices
-      : ["decide" as SpaceFillChoice];
+  const wizardSteps = wizardStepNames;
+  const selectedSpaceFillForGeneration = spaceFillChoices;
+  const isTightGenerationLayout = () => {
+    const officialArea = selectedOfficialSets
+      .map((setNumber) => modularBuildings.find((preset) => preset.setNumber === setNumber))
+      .filter(Boolean)
+      .reduce((sum, preset) => sum + (preset?.widthStuds ?? 0) * (preset?.depthStuds ?? 0), 0);
+    const mocArea = customMocs.reduce((sum, moc) => sum + moc.widthStuds * moc.depthStuds, 0);
+    const usableArea = Math.max(1, layoutGeometry.usableZones.reduce((sum, zone) => sum + zone.widthStuds * zone.depthStuds, 0));
+    return (officialArea + mocArea) / usableArea > 0.62 || usableArea < 96 * 64;
+  };
+  const generateBestLayout = (choices: SpaceFillChoice[] = selectedSpaceFillForGeneration) => {
+    if (!validateActiveDimensionInputs()) return null;
+    const generationStartedAt = performance.now();
+    const originalScore = displayCityRating;
+    const isRegeneration = blueprintReady && planningMode === "auto";
+    const historyBeforeGeneration = currentLayoutSnapshot();
+    const minimumScore = isTightGenerationLayout() ? 75 : 85;
+    const candidates: GenerationCandidate[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = generateLayout(choices, { attempt, commit: false, skipSpaceFillPrompt: true });
+      if (!candidate) continue;
+      candidates.push(candidate);
+      if (candidate.score >= minimumScore && candidate.failedReasons.length === 0) break;
+    }
+    const best = [...candidates].sort((a, b) =>
+      b.score - a.score ||
+      a.failedReasons.length - b.failedReasons.length ||
+      a.generationSettings.attempt - b.generationSettings.attempt,
+    )[0];
+    if (!best) return null;
+    const failed = candidates.filter((candidate) => candidate !== best);
+    setFailedGenerationCandidates(failed);
+    const summary = `Blueprint tested ${candidates.length} layouts and selected the best one.`;
+    setLastGenerationSummary(summary);
+    pushHistory("Generated layout", historyBeforeGeneration);
+    setObjectWarning(best.failedReasons.some((reason) => reason.includes("outside") || reason.includes("not placed")) ? "This object is outside your usable table space." : "");
+    setLayoutScore(best.score);
+    setLayoutNotes([summary, ...best.notes]);
+    setPieces(best.pieces);
+    fitToScreen();
+    const generationTime = Math.round(performance.now() - generationStartedAt);
+    const bestUtilisationScore = Number(
+      best.notes.find((note) => note.startsWith("Layout utilisation score"))?.match(/(\d+)%/)?.[1] ?? best.score,
+    );
+    trackBlueprintEvent("layout_generated", {
+      city_rating: best.score,
+      buildability_score: best.score,
+      expansion_score: bestUtilisationScore,
+      building_count: best.pieces.filter((piece) => piece.type === "building").length,
+      generation_time_ms: generationTime,
+      attempts_tested: candidates.length,
+    });
+    if (isRegeneration) {
+      trackBlueprintEvent("generate_another_version", {
+        original_score: originalScore,
+        new_score: best.score,
+      });
+    }
+    return best;
+  };
   const runBlueprintGeneration = () => {
     const stages = [
-      "Analysing Collection...",
-      "Planning Road Network...",
-      "Finding Expansion Opportunities...",
+      "Testing layout options...",
+      "Checking road network...",
+      "Trying a better version...",
       "Generating City Blueprint...",
     ];
     setIsGeneratingBlueprint(true);
@@ -5516,7 +6057,7 @@ export default function Home() {
       window.setTimeout(() => setGenerationStage(stage), index * 420);
     });
     window.setTimeout(() => {
-      generateLayout(selectedSpaceFillForGeneration);
+      generateBestLayout(selectedSpaceFillForGeneration);
       setBlueprintReady(true);
       setIsGeneratingBlueprint(false);
       setShowLayoutFeedbackPrompt(true);
@@ -5525,6 +6066,10 @@ export default function Home() {
   const submitFeatureRequest = () => {
     const text = featureRequestText.trim();
     if (!text) return;
+    trackBlueprintEvent("feedback_submitted", {
+      useful: "feature_request",
+      reason_selected: featureRequestCategory,
+    });
     setFeatureRequests((current) => [
       {
         id: newId(),
@@ -5542,6 +6087,9 @@ export default function Home() {
   };
   const submitWaitlist = () => {
     if (!waitlistEmail.trim()) return;
+    trackBlueprintEvent("waitlist_submitted", {
+      source_page: currentAnalyticsLocation(),
+    });
     setWaitlistName("");
     setWaitlistEmail("");
     setWaitlistNotes("");
@@ -5557,6 +6105,10 @@ export default function Home() {
     }));
   };
   const submitLayoutFeedback = (useful: boolean, reasons: string[] = []) => {
+    trackBlueprintEvent("feedback_submitted", {
+      useful: useful ? "yes" : "no",
+      reason_selected: reasons.filter((reason) => reason !== "__show_no__").join(", ") || "none",
+    });
     setLayoutFeedback((current) => [
       {
         id: newId(),
@@ -5564,6 +6116,9 @@ export default function Home() {
         reasons,
         createdAt: new Date().toISOString(),
         layoutScore: displayCityRating,
+        selectedBuildings: selectedOfficialSets.length + customMocs.length,
+        tableSize: `${studsToCm(layoutGeometry.width)}cm x ${studsToCm(layoutGeometry.depth)}cm`,
+        failureReason: reasons.join(", ") || failedGenerationCandidates[0]?.failedReasons.join(", ") || lastGenerationSummary,
       },
       ...current,
     ]);
@@ -5585,6 +6140,11 @@ export default function Home() {
     setWizardStep(6);
   };
   const startAutoGenerateMode = () => {
+    trackBlueprintEvent("create_city_clicked", {
+      referrer: document.referrer || "direct",
+    });
+    trackBlueprintEvent("wizard_started");
+    window.localStorage.removeItem(WIZARD_LAST_STEP_KEY);
     setHasStartedBlueprint(true);
     setPlanningMode("auto");
     setWizardStep(1);
@@ -5614,13 +6174,9 @@ export default function Home() {
         <p className="text-sm font-black text-ink">
           City Rating {displayCityRating}% <span className="ml-1">{liveCityAnalysis.status.icon} {liveCityAnalysis.status.label}</span>
         </p>
-        <button
-          className="cursor-not-allowed rounded bg-white/70 px-2 py-1 text-[11px] font-black uppercase text-ink opacity-75"
-          disabled
-          title="Advanced city rating details are coming soon."
-        >
-          Advanced Coming Soon
-        </button>
+        <span className="rounded-full border border-stone-300 bg-white/75 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-stone-600">
+          V1 Public Beta
+        </span>
       </div>
       {false && showAnalysisPanel && (
         <>
@@ -5668,17 +6224,48 @@ export default function Home() {
         : [...withoutDecide, choice];
     });
   };
+  const spaceFillSizeOptionsFor = (choice: SpaceFillChoice): AddOnSize[] => {
+    if (choice === "future-corner") return ["large"];
+    if (choice === "future-straight") return ["medium", "large", "wide", "custom"];
+    if (choice === "decide" || choice === "open-space") return [];
+    return ["small", "medium", "large", "wide", "custom"];
+  };
+  const spaceFillSizeSelectionFor = (choice: SpaceFillChoice) =>
+    spaceFillSizes[choice] ?? defaultSpaceFillSizes[choice] ?? { size: "large" as const, customWidth: 32, customDepth: 32 };
+  const updateSpaceFillSize = (choice: SpaceFillChoice, updates: Partial<SpaceFillSizeSelection>) => {
+    const nextUpdates = {
+      ...updates,
+      ...(updates.customWidth !== undefined ? { customWidth: snapPlanningModuleDimension(updates.customWidth) } : {}),
+      ...(updates.customDepth !== undefined ? { customDepth: snapPlanningModuleDimension(updates.customDepth) } : {}),
+    };
+    setSpaceFillSizes((current) => ({
+      ...current,
+      [choice]: {
+        ...spaceFillSizeSelectionFor(choice),
+        ...nextUpdates,
+      },
+    }));
+  };
+  const formatSpaceFillSize = (choice: SpaceFillChoice) => {
+    if (choice === "decide") return "Blueprint chooses";
+    if (choice === "future-corner") return "32x32";
+    const dims = spaceFillSizeToStuds(choice, spaceFillSizeSelectionFor(choice));
+    return `${dims.width}x${dims.depth}`;
+  };
 
   if (!hasStartedBlueprint) {
     return (
       <>
         <main className="min-h-screen bg-sky-100">
           <nav className="absolute left-0 right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-2 px-4 py-3 sm:px-8 sm:py-5">
-            <button className="rounded border border-sky-300 bg-white/90 px-3 py-2 text-xs font-black text-sky-950 shadow-sm hover:bg-white sm:px-4 sm:text-sm" onClick={() => setActiveModal("roadmap")}>
+            <button className="rounded border border-sky-300 bg-white/90 px-3 py-2 text-xs font-black text-sky-950 shadow-sm hover:bg-white sm:px-4 sm:text-sm" onClick={() => openModal("roadmap")}>
               Roadmap
             </button>
-            <button className="rounded bg-ink px-3 py-2 text-xs font-black text-white shadow-sm hover:bg-black sm:px-4 sm:text-sm" onClick={() => setActiveModal("featureRequest")}>
+            <button className="rounded bg-ink px-3 py-2 text-xs font-black text-white shadow-sm hover:bg-black sm:px-4 sm:text-sm" onClick={() => openModal("featureRequest")}>
               Feedback
+            </button>
+            <button className="rounded bg-brick px-3 py-2 text-xs font-black text-white shadow-sm hover:bg-red-700 sm:px-4 sm:text-sm" onClick={() => openModal("waitlist")}>
+              Join Waitlist
             </button>
           </nav>
           <section className="relative overflow-hidden px-4 pb-16 pt-24 sm:px-8 sm:pt-28">
@@ -5710,7 +6297,7 @@ export default function Home() {
                     </button>
                     <button
                       className="h-12 rounded border-2 border-ink bg-white px-6 text-base font-black text-ink shadow-panel hover:bg-yellow-100"
-                      onClick={() => setActiveModal("waitlist")}
+                      onClick={() => openModal("waitlist")}
                     >
                       ⭐ Join Waitlist
                     </button>
@@ -5819,15 +6406,15 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button className="rounded bg-yellow-300 px-4 py-3 text-sm font-black text-ink hover:bg-yellow-200" onClick={() => setActiveModal("featureRequest")}>
+                    <button className="rounded bg-yellow-300 px-4 py-3 text-sm font-black text-ink hover:bg-yellow-200" onClick={() => openModal("featureRequest")}>
                       Request Feature
                     </button>
-                    <button className="rounded border border-white/40 px-4 py-3 text-sm font-black text-white hover:bg-white/10" onClick={() => setActiveModal("roadmap")}>
+                    <button className="rounded border border-white/40 px-4 py-3 text-sm font-black text-white hover:bg-white/10" onClick={() => openModal("roadmap")}>
                       View Roadmap
                     </button>
                     <button
                       className="rounded bg-brick px-4 py-3 text-sm font-black text-white hover:bg-red-700"
-                      onClick={() => setActiveModal("waitlist")}
+                      onClick={() => openModal("waitlist")}
                     >
                       Join Waitlist
                     </button>
@@ -5991,7 +6578,7 @@ export default function Home() {
                   </div>
                 </section>
               )}
-              <button className="mt-6 rounded bg-ink px-4 py-2 text-sm font-black text-white hover:bg-black" onClick={() => setActiveModal("featureRequest")}>
+              <button className="mt-6 rounded bg-ink px-4 py-2 text-sm font-black text-white hover:bg-black" onClick={() => openModal("featureRequest")}>
                 Feedback
               </button>
             </div>
@@ -6224,7 +6811,7 @@ export default function Home() {
                     <strong>Buildings Selected:</strong> {selectedOfficialSets.length}
                     <span className="ml-4"><strong>Estimated Footprint:</strong> {selectedBaseplateEstimate} Baseplates</span>
                   </div>
-                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(2)}>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => completeWizardStep("Buildings", 2)}>
                     Continue
                   </button>
                 </div>
@@ -6373,7 +6960,7 @@ export default function Home() {
                 </div>
                 <div className="mt-6 flex justify-between">
                   <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(1)}>Back</button>
-                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(3)}>Continue</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => completeWizardStep("MOCs", 3)}>Continue</button>
                 </div>
               </div>
             )}
@@ -6409,7 +6996,7 @@ export default function Home() {
                 </div>
                 <div className="mt-6 flex justify-between">
                   <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(2)}>Back</button>
-                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(4)}>Continue</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => completeWizardStep("Roads", 4)}>Continue</button>
                 </div>
               </div>
             )}
@@ -6419,15 +7006,72 @@ export default function Home() {
                 <h2 className="text-2xl font-semibold text-ink">What would you like in your city?</h2>
                 <p className="mt-2 text-sm text-stone-600">Choose optional public spaces and future planning areas for Blueprint to consider.</p>
                 <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-                  {spaceFillOptions.filter((option) => option.value !== "open-space").map((option) => (
-                    <button key={option.value} className={`rounded border px-3 py-2 text-left text-sm font-semibold ${spaceFillChoices.includes(option.value) ? "border-ink bg-ink text-white" : "bg-white"}`} onClick={() => toggleSpaceChoice(option.value)}>
-                      {option.label}
-                    </button>
-                  ))}
+                  {spaceFillOptions.filter((option) => option.value !== "open-space").map((option) => {
+                    const selected = spaceFillChoices.includes(option.value);
+                    const sizeOptions = spaceFillSizeOptionsFor(option.value);
+                    const sizeSelection = spaceFillSizeSelectionFor(option.value);
+                    return (
+                      <div key={option.value} className={`rounded border p-3 text-left text-sm ${selected ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-ink"}`}>
+                        <button className="w-full text-left font-semibold" onClick={() => toggleSpaceChoice(option.value)}>
+                          <span className="block">{option.label}</span>
+                          {selected && <span className="mt-1 block text-xs opacity-80">{option.label} · {formatSpaceFillSize(option.value)}</span>}
+                        </button>
+                        {selected && sizeOptions.length > 0 && (
+                          <div className="mt-3 space-y-2 rounded bg-white/15 p-2">
+                            {option.value === "future-corner" ? (
+                              <p className="text-xs font-semibold">Fixed size: 32x32</p>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-1">
+                                {sizeOptions.map((size) => (
+                                  <button
+                                    key={size}
+                                    className={`rounded border px-2 py-1 text-xs font-semibold ${sizeSelection.size === size ? "border-white bg-white text-ink" : "border-white/40 text-current"}`}
+                                    onClick={() => updateSpaceFillSize(option.value, { size })}
+                                  >
+                                    {size === "wide" ? "Extra Large" : addOnSizeLabels[size].split(" ")[0]}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {sizeSelection.size === "custom" && option.value !== "future-corner" && (
+                              <div className="grid grid-cols-2 gap-1">
+                                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wide">
+                                  Width
+                                  <select
+                                    value={snapPlanningModuleDimension(sizeSelection.customWidth)}
+                                    onChange={(event) => updateSpaceFillSize(option.value, { customWidth: Number(event.target.value) })}
+                                    className="h-8 w-full rounded border border-white/50 px-2 text-xs text-ink"
+                                    aria-label={`${option.label} custom width studs`}
+                                  >
+                                    {planningModuleSizeOptions.map((value) => (
+                                      <option key={value} value={value}>{value}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wide">
+                                  Depth
+                                  <select
+                                    value={snapPlanningModuleDimension(sizeSelection.customDepth)}
+                                    onChange={(event) => updateSpaceFillSize(option.value, { customDepth: Number(event.target.value) })}
+                                    className="h-8 w-full rounded border border-white/50 px-2 text-xs text-ink"
+                                    aria-label={`${option.label} custom depth studs`}
+                                  >
+                                    {planningModuleSizeOptions.map((value) => (
+                                      <option key={value} value={value}>{value}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="mt-6 flex justify-between">
                   <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(3)}>Back</button>
-                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(5)}>Continue</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => completeWizardStep("Features", 5)}>Continue</button>
                 </div>
               </div>
             )}
@@ -6516,7 +7160,7 @@ export default function Home() {
                 </label>
                 <div className="mt-6 flex justify-between">
                   <button className="h-12 flex-1 rounded border border-stone-300 px-5 text-sm font-semibold md:h-10 md:flex-none" onClick={() => setWizardStep(4)}>Back</button>
-                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => setWizardStep(6)}>Continue</button>
+                  <button className="h-12 w-full rounded bg-ink px-5 text-sm font-semibold text-white md:h-10 md:w-auto" onClick={() => completeWizardStep("Space", 6)}>Continue</button>
                 </div>
               </div>
             )}
@@ -6544,7 +7188,15 @@ export default function Home() {
                       setTrainGenerator("none");
                       setLayoutFeatureChoice("roads");
                       setTrainPieces([]);
-                      if (validateActiveDimensionInputs()) runBlueprintGeneration();
+                      if (validateActiveDimensionInputs()) {
+                        window.localStorage.setItem(WIZARD_LAST_STEP_KEY, "Space");
+                        trackBlueprintEvent("wizard_completed", {
+                          buildings_selected: selectedOfficialSets.length,
+                          mocs_selected: customMocs.length,
+                          table_size: `${studsToCm(layoutGeometry.width)}cm x ${studsToCm(layoutGeometry.depth)}cm`,
+                        });
+                        runBlueprintGeneration();
+                      }
                     }}
                   >
                     Generate Blueprint
@@ -6586,7 +7238,7 @@ export default function Home() {
             <div className="hidden items-center gap-1.5 md:flex">
               <button
                 className="flex h-10 items-center gap-2 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-45"
-                onClick={() => generateLayout(selectedSpaceFillForGeneration)}
+                onClick={() => generateBestLayout(selectedSpaceFillForGeneration)}
                 disabled={planningMode !== "manual" && !hasBuildings}
                 title={planningMode === "auto" ? "Generate another version" : "Generate layout"}
               >
@@ -6640,8 +7292,14 @@ export default function Home() {
               <span className="hidden sm:inline">Export</span>
             </button>
 
-            <button className="h-10 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white md:hidden" onClick={() => setActiveModal("waitlist")}>
+            <button className="h-10 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white md:hidden" onClick={() => openModal("waitlist")}>
               Waitlist
+            </button>
+            <button className="hidden h-10 whitespace-nowrap rounded border border-stone-300 bg-white px-3 text-sm font-semibold text-ink hover:bg-stone-100 md:inline-flex md:items-center" onClick={() => openModal("featureRequest")}>
+              Feedback
+            </button>
+            <button className="hidden h-10 whitespace-nowrap rounded bg-brick px-3 text-sm font-black text-white shadow-sm hover:bg-red-700 md:inline-flex md:items-center" onClick={() => openModal("waitlist")}>
+              Join Waitlist
             </button>
 
             <div className="relative hidden md:block">
@@ -6658,7 +7316,7 @@ export default function Home() {
                     className="flex w-full items-center justify-between rounded px-3 py-2 text-left font-semibold text-ink hover:bg-stone-100"
                     onClick={() => {
                       setShowMoreMenu(false);
-                      setActiveModal("roadmap");
+                      openModal("roadmap");
                     }}
                   >
                     Roadmap
@@ -6667,10 +7325,10 @@ export default function Home() {
                     className="flex w-full items-center justify-between rounded px-3 py-2 text-left font-semibold text-ink hover:bg-stone-100"
                     onClick={() => {
                       setShowMoreMenu(false);
-                      setActiveModal("featureRequest");
+                      openModal("analytics");
                     }}
                   >
-                    Feedback
+                    Beta Metrics
                   </button>
                   <button
                     className="flex w-full items-center justify-between rounded px-3 py-2 text-left font-semibold text-red-700 hover:bg-red-50"
@@ -6732,24 +7390,27 @@ export default function Home() {
               ◀ Collapse Panel
             </button>
           </section>
-          <section className="rounded border border-yellow-300 bg-yellow-50 p-4 shadow-panel">
-            <p className="text-sm font-black text-ink">Message from BrickmansPark</p>
-            <p className="mt-2 text-xs leading-5 text-stone-700">
-              Blueprint is built by a LEGO city builder, for LEGO city builders. Have an idea? Share feedback below.
-            </p>
-            <div className="mt-3 flex gap-2">
-              <button className="rounded bg-ink px-3 py-2 text-xs font-black text-white hover:bg-black" onClick={() => setActiveModal("featureRequest")}>
+          <details className="rounded border border-stone-300 bg-white shadow-sm">
+            <summary className="cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-wide text-stone-600">
+              Community
+            </summary>
+            <div className="grid gap-2 border-t border-stone-200 p-3">
+              <button className="rounded border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-ink hover:bg-stone-100" onClick={() => openModal("featureRequest")}>
                 Feedback
               </button>
-              <button className="rounded border border-stone-300 bg-white px-3 py-2 text-xs font-black text-ink hover:bg-stone-100" onClick={() => setActiveModal("roadmap")}>
-                View Roadmap
+              <button className="rounded border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-ink hover:bg-stone-100" onClick={() => openModal("roadmap")}>
+                Roadmap
+              </button>
+              <button className="rounded bg-brick px-3 py-2 text-xs font-bold text-white hover:bg-red-700" onClick={() => openModal("waitlist")}>
+                Join Waitlist
               </button>
             </div>
-          </section>
-          <section className="rounded border border-stone-300 bg-white p-5 shadow-panel">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">
-              Layout Shape
-            </h2>
+          </details>
+          <details className="rounded border border-stone-300 bg-white shadow-sm">
+            <summary className="cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-wide text-stone-600">
+              Layout Settings
+            </summary>
+            <div className="border-t border-stone-200 p-4">
             <label className="mt-4 block space-y-1 text-sm font-medium text-stone-700">
               Shape
               <select
@@ -7053,7 +7714,8 @@ export default function Home() {
                 {dimensionError}
               </p>
             )}
-          </section>
+            </div>
+          </details>
 
           <section className="rounded border border-stone-300 bg-white p-5 shadow-panel">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">
@@ -7092,7 +7754,7 @@ export default function Home() {
               </label>
               <button
                 className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded bg-ink px-4 text-sm font-medium text-white hover:bg-black"
-                onClick={() => generateLayout()}
+                onClick={() => generateBestLayout()}
               >
                 <Sparkles size={16} aria-hidden="true" />
                 Generate Layout
@@ -7483,7 +8145,7 @@ export default function Home() {
                 {planningMode !== "manual" && (
                   <button
                     className="flex h-10 w-full items-center justify-center gap-2 rounded border border-stone-300 bg-white px-4 text-sm font-medium text-ink hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-45"
-                    onClick={() => generateLayout()}
+                    onClick={() => generateBestLayout()}
                     disabled={!hasBuildings}
                   >
                     <Sparkles size={16} aria-hidden="true" />
@@ -7504,11 +8166,11 @@ export default function Home() {
             )}
           </section>
 
-          <section className="rounded border border-stone-300 bg-white p-5 shadow-panel">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">
-              Optional add-ons
-            </h2>
-            <div className="mt-4 space-y-2">
+          <details className="rounded border border-stone-300 bg-white shadow-sm">
+            <summary className="cursor-pointer px-4 py-3 text-xs font-bold uppercase tracking-wide text-stone-600">
+              Optional Features
+            </summary>
+            <div className="space-y-2 border-t border-stone-200 p-4">
               {cityAddOnOptions.map((option) => {
                 const selected = cityAddOns.find((item) => item.id === option.id);
                 return (
@@ -7538,28 +8200,36 @@ export default function Home() {
                         </select>
                         {selected.size === "custom" && (
                           <div className="grid grid-cols-2 gap-1">
-                            <input
-                              type="number"
-                              min={8}
-                              step={8}
-                              value={selected.customWidth}
-                              onChange={(event) =>
-                                updateCityAddOn(option.id, { customWidth: Number(event.target.value) })
-                              }
-                              className="h-9 rounded border border-stone-300 px-2 text-xs outline-none focus:border-ink"
-                              aria-label={`${option.label} width studs`}
-                            />
-                            <input
-                              type="number"
-                              min={8}
-                              step={8}
-                              value={selected.customDepth}
-                              onChange={(event) =>
-                                updateCityAddOn(option.id, { customDepth: Number(event.target.value) })
-                              }
-                              className="h-9 rounded border border-stone-300 px-2 text-xs outline-none focus:border-ink"
-                              aria-label={`${option.label} depth studs`}
-                            />
+                            <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+                              Width
+                              <select
+                                value={snapPlanningModuleDimension(selected.customWidth)}
+                                onChange={(event) =>
+                                  updateCityAddOn(option.id, { customWidth: Number(event.target.value) })
+                                }
+                                className="h-9 w-full rounded border border-stone-300 px-2 text-xs outline-none focus:border-ink"
+                                aria-label={`${option.label} width studs`}
+                              >
+                                {planningModuleSizeOptions.map((value) => (
+                                  <option key={value} value={value}>{value}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+                              Depth
+                              <select
+                                value={snapPlanningModuleDimension(selected.customDepth)}
+                                onChange={(event) =>
+                                  updateCityAddOn(option.id, { customDepth: Number(event.target.value) })
+                                }
+                                className="h-9 w-full rounded border border-stone-300 px-2 text-xs outline-none focus:border-ink"
+                                aria-label={`${option.label} depth studs`}
+                              >
+                                {planningModuleSizeOptions.map((value) => (
+                                  <option key={value} value={value}>{value}</option>
+                                ))}
+                              </select>
+                            </label>
                           </div>
                         )}
                       </div>
@@ -7576,7 +8246,7 @@ export default function Home() {
                 );
               })}
             </div>
-          </section>
+          </details>
 
           <section className="rounded border border-stone-300 bg-white p-5 shadow-panel">
             <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
@@ -7712,8 +8382,8 @@ export default function Home() {
           )}
         </aside>
 
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded border border-sky-200 bg-white shadow-panel">
-          <div className="shrink-0 border-b border-sky-200 bg-gradient-to-r from-sky-50 via-lime-50 to-yellow-50 px-3 py-2">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded border border-stone-200 bg-white shadow-sm">
+          <div className="shrink-0 border-b border-stone-200 bg-stone-50/80 px-4 py-3">
             <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-3">
@@ -7739,9 +8409,32 @@ export default function Home() {
               <div className="mt-2 max-w-3xl">
                 {cityRatingPanel}
               </div>
-              <p className="mt-2 rounded border border-lime-300 bg-lime-50 px-3 py-2 text-xs font-bold leading-5 text-lime-950">
-                🧪 Blueprint V1 Tester: This is an early version of Blueprint. Layout generation and scoring are actively being improved.
-              </p>
+              {!dismissedBetaNotice && (
+                <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white/80 px-3 py-1 text-xs font-semibold text-stone-600 shadow-sm">
+                  <span>Public Beta</span>
+                  <button
+                    className="rounded-full px-1 text-stone-500 hover:bg-stone-100 hover:text-ink"
+                    onClick={() => setDismissedBetaNotice(true)}
+                    aria-label="Close public beta message"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              {lastGenerationSummary && (
+                <div className="mt-2 flex max-w-3xl items-start justify-between gap-3 rounded border border-stone-200 bg-white px-3 py-2 text-xs font-semibold leading-5 text-stone-700">
+                  <p>{lastGenerationSummary}</p>
+                  <button
+                    className="-mr-1 rounded px-1 text-stone-500 hover:bg-stone-100 hover:text-ink"
+                    onClick={() => setLastGenerationSummary("")}
+                    aria-label="Close generation summary"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               {false && showAnalysisPanel && (layoutScore > 0 || pieces.length > 0) && (
                 <div className="mt-2 grid max-w-xl grid-cols-2 gap-2">
                   {[
@@ -7770,7 +8463,7 @@ export default function Home() {
                   Modular not aligned to 16x16 grid.
                 </p>
               )}
-              <p className="mt-2 rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs font-bold leading-5 text-yellow-950 md:hidden">
+              <p className="mt-2 rounded border border-stone-200 bg-white px-3 py-2 text-xs font-semibold leading-5 text-stone-600 md:hidden">
                 For the best editing experience, use a tablet or desktop. Mobile is view-only with pan, zoom, fit-to-screen, and export.
               </p>
             </div>
@@ -7862,12 +8555,12 @@ export default function Home() {
             {blueprintDisplayMode === "planning" && (activeDistricts.length > 0 || pieces.some((piece) => piece.type === "future")) && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {activeDistricts.map((district) => (
-                  <span key={district.value} className="rounded-full border border-white/70 px-2 py-1 text-[10px] font-black uppercase text-ink shadow-sm" style={{ backgroundColor: categorySwatches[district.value] }}>
+                  <span key={district.value} className="rounded-full border border-stone-300/70 bg-white/65 px-2 py-1 text-[10px] font-semibold uppercase text-stone-700" style={{ boxShadow: `inset 0 0 0 999px ${categorySwatches[district.value]}33` }}>
                     {district.label} District · {district.count}
                   </span>
                 ))}
                 {pieces.some((piece) => piece.type === "future") && (
-                  <span className="rounded-full border border-white/70 bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase text-emerald-950 shadow-sm">
+                  <span className="rounded-full border border-stone-300/70 bg-emerald-50/60 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-950/75">
                     Expansion Zones · {pieces.filter((piece) => piece.type === "future").length}
                   </span>
                 )}
@@ -7899,7 +8592,7 @@ export default function Home() {
           <div className="flex min-h-0 flex-1 overflow-hidden">
           <div
             ref={canvasWrapRef}
-            className={`relative min-h-0 flex-1 overflow-hidden bg-stone-100 ${isPanning ? "cursor-grabbing" : zoomPercent > 100 ? "cursor-grab" : "cursor-default"}`}
+            className={`relative min-h-0 flex-1 overflow-hidden bg-[#f4f2ed] ${isPanning ? "cursor-grabbing" : zoomPercent > 100 ? "cursor-grab" : "cursor-default"}`}
             onWheel={handleWheelZoom}
             onPointerDown={startCanvasPan}
             onPointerMove={moveCanvasPan}
@@ -7915,14 +8608,14 @@ export default function Home() {
             >
             <div
               ref={gridRef}
-              className="planner-grid relative overflow-hidden border-2 border-stone-700"
+              className="planner-grid relative overflow-hidden border border-stone-500/70 shadow-sm"
               style={tableStyle}
               title={`Table: ${studsToCm(layoutGeometry.width)}cm x ${studsToCm(layoutGeometry.depth)}cm · Build grid: ${Math.round(layoutGeometry.width)} x ${Math.round(layoutGeometry.depth)} studs`}
             >
               {layoutGeometry.tableSections.map((section) => (
                 <div
                   key={section.id}
-                  className="pointer-events-none absolute z-0 border border-stone-500 bg-[#e4dfd1]/70"
+                  className="pointer-events-none absolute z-0 border border-stone-400/55 bg-[#e7e2d5]/55"
                   style={{
                     left: section.x * canvasScale,
                     top: section.y * canvasScale,
@@ -7935,7 +8628,7 @@ export default function Home() {
                 baseplateLabels.map((baseplate) => (
                   <div
                     key={baseplate.id}
-                    className="pointer-events-none absolute z-[1] flex items-start justify-end border border-dashed border-stone-700/25 p-1 text-[9px] font-semibold uppercase text-stone-700/65"
+                    className="pointer-events-none absolute z-[1] flex items-start justify-end border border-dashed border-stone-700/18 p-1 text-[8px] font-medium uppercase text-stone-600/55"
                     style={{
                       left: baseplate.x * canvasScale,
                       top: baseplate.y * canvasScale,
@@ -7950,7 +8643,7 @@ export default function Home() {
                 baseplateLabels.map((baseplate) => (
                   <div
                     key={`coord-${baseplate.id}`}
-                    className="pointer-events-none absolute z-[2] rounded-br bg-ink/85 px-1.5 py-0.5 text-[10px] font-black text-white"
+                    className="pointer-events-none absolute z-[2] rounded-br bg-stone-800/80 px-1.5 py-0.5 text-[10px] font-semibold text-white"
                     style={{
                       left: baseplate.x * canvasScale,
                       top: baseplate.y * canvasScale,
@@ -7962,7 +8655,7 @@ export default function Home() {
               {layoutGeometry.blockedZones.map((zone) => (
                 <div
                   key={zone.id}
-                  className="pointer-events-none absolute z-[4] flex items-center justify-center border-2 border-stone-700 bg-stone-700/55 text-xs font-semibold uppercase text-white"
+                  className="pointer-events-none absolute z-[4] flex items-center justify-center border border-stone-700/50 bg-stone-700/35 text-xs font-semibold uppercase text-white"
                   style={{
                     left: zone.x * canvasScale,
                     top: zone.y * canvasScale,
@@ -8085,11 +8778,11 @@ export default function Home() {
                       {piece.name}
                     </div>
                   )}
-                  <div className={`absolute bottom-[-20px] right-0 hidden gap-1 opacity-0 transition-opacity md:flex ${
-                    selectedObject?.kind === "train" && selectedObject.id === piece.id ? "opacity-100" : ""
+                  <div className={`absolute bottom-[-20px] right-0 hidden gap-1 transition-opacity md:flex ${
+                    selectedObject?.kind === "train" && selectedObject.id === piece.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                   }`}>
                         <button
-                          className="flex h-5 w-5 items-center justify-center rounded bg-white/80 hover:bg-white disabled:opacity-40"
+                          className="flex h-5 w-5 items-center justify-center rounded border border-stone-300 bg-white/90 text-stone-800 shadow-sm hover:bg-white disabled:opacity-40"
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={() => rotateTrainPiece(piece.id)}
                           disabled={!piece.rotationAllowed}
@@ -8098,7 +8791,7 @@ export default function Home() {
                           <RotateCw size={13} aria-hidden="true" />
                         </button>
                         <button
-                          className="flex h-5 w-5 items-center justify-center rounded bg-white/80 hover:bg-white"
+                          className="flex h-5 w-5 items-center justify-center rounded border border-stone-300 bg-white/90 text-stone-800 shadow-sm hover:bg-white"
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={() => removeTrainPiece(piece.id)}
                           aria-label={`Remove ${piece.name}`}
@@ -8122,14 +8815,14 @@ export default function Home() {
                   onMouseLeave={() => setHoveredBuildGuideId(null)}
                   title={`${piece.name} · ${piece.baseplateModule ?? baseplateModuleLabel(piece.width, piece.depth)} module · ${piece.width} x ${piece.depth} studs (${studsToCm(piece.width)} x ${studsToCm(piece.depth)} cm) · Position ${piece.x}, ${piece.y} studs (${studsToCm(piece.x)}, ${studsToCm(piece.y)} cm) · Rotation ${piece.rotation}° · Ground Level${piece.type === "future" ? ` · ${futurePlotMeta(piece).plotType} · District: ${futurePlotMeta(piece).district}` : ""}${overhangDescriptionFor(piece) ? ` · ${overhangDescriptionFor(piece)}` : ""}`}
                   className={`group absolute select-none overflow-hidden border shadow-sm transition-shadow ${pieceLayerClass(piece)} ${
-                    piece.type === "road" ? "border-transparent" : piece.type === "future" ? `${blueprintDisplayMode === "planning" ? "border border-dashed border-emerald-700/60 bg-emerald-200/25" : "border border-dashed border-emerald-700/40 bg-emerald-100/15"} text-emerald-950 shadow-none` : categoryStyles[piece.category]
+                    piece.type === "road" ? "border-transparent shadow-none" : piece.type === "future" ? `${blueprintDisplayMode === "planning" ? "border border-dashed border-emerald-800/25 bg-emerald-50/10" : "border border-dashed border-emerald-800/15 bg-emerald-50/5"} text-emerald-950 shadow-none` : categoryStyles[piece.category]
                   } ${
                     overlappingBuildingIds.has(piece.id) || overlappingRoadIds.has(piece.id) || outsidePieceIds.has(piece.id)
                       ? "ring-4 ring-red-600"
                       : ""
                   } ${
                     (selectedObject?.kind === "piece" && selectedObject.id === piece.id) || hoveredBuildGuideId === piece.id
-                      ? "ring-2 ring-ink"
+                      ? "ring-1 ring-stone-900"
                       : ""
                   }`}
                   style={{
@@ -8171,18 +8864,18 @@ export default function Home() {
                   )}
                   {piece.type === "building" && <BuildingFootprint piece={piece} />}
                   {piece.type === "future" && (
-                    <div className="pointer-events-none relative h-full w-full text-emerald-950">
-                      <span className="absolute left-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-600/55 shadow-[0_0_0_1px_rgba(4,120,87,0.25)]" />
+                    <div className="pointer-events-none relative h-full w-full text-emerald-950/75">
+                      <span className="absolute left-1 top-1 h-1 w-1 rounded-full bg-emerald-900/35" />
                       {blueprintDisplayMode === "planning" && (
                         <div className="absolute inset-1 flex items-center justify-center text-center">
-                          <span className="rounded bg-white/65 px-1 py-0.5 text-[9px] font-bold uppercase leading-tight text-emerald-950 shadow-sm">
+                          <span className="rounded bg-white/45 px-1 py-0.5 text-[8px] font-semibold uppercase leading-tight text-emerald-950/75">
                             {futurePlotMeta(piece).compactLabel}
                           </span>
                         </div>
                       )}
                       {blueprintDisplayMode === "build" && (
                         <div className="absolute inset-x-1 top-1 hidden text-center group-hover:block">
-                          <span className="rounded bg-white/80 px-1 py-0.5 text-[8px] font-bold uppercase leading-tight text-emerald-950 shadow-sm">
+                          <span className="rounded bg-white/70 px-1 py-0.5 text-[8px] font-semibold uppercase leading-tight text-emerald-950/75">
                             {futurePlotMeta(piece).compactLabel}
                           </span>
                         </div>
@@ -8199,17 +8892,17 @@ export default function Home() {
                     </div>
                   )}
                   {piece.type === "building" && showInlineLabels && (
-                    <div className="pointer-events-none absolute inset-x-1 top-1 rounded bg-white/80 px-1 text-center text-[11px] font-bold leading-tight text-ink">
+                    <div className="pointer-events-none absolute inset-x-1 top-1 rounded bg-white/72 px-1 text-center text-[10px] font-semibold leading-tight text-stone-900">
                       {piece.name}
                     </div>
                   )}
                   {zoomPercent >= 150 && viewMode === "blueprint" && (
-                    <div className="pointer-events-none absolute bottom-1 left-1 rounded bg-white/80 px-1 text-[9px] font-black text-ink shadow-sm">
+                    <div className="pointer-events-none absolute bottom-1 left-1 rounded bg-white/70 px-1 text-[9px] font-semibold text-stone-800">
                       {gridCoordinateForRect(piece)}
                     </div>
                   )}
                   <button
-                    className="absolute bottom-1 right-14 hidden h-5 w-5 items-center justify-center rounded bg-white/80 text-ink md:flex"
+                    className={`absolute bottom-1 right-14 hidden h-5 w-5 items-center justify-center rounded border border-stone-300 bg-white/90 text-stone-800 shadow-sm transition-opacity md:flex ${selectedObject?.kind === "piece" && selectedObject.id === piece.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => rotatePiece(piece.id)}
                     aria-label={`Rotate ${piece.name}`}
@@ -8217,7 +8910,7 @@ export default function Home() {
                     <RotateCw size={12} aria-hidden="true" />
                   </button>
                   <button
-                    className="absolute bottom-1 right-8 hidden h-5 w-5 items-center justify-center rounded bg-white/80 text-ink md:flex"
+                    className={`absolute bottom-1 right-8 hidden h-5 w-5 items-center justify-center rounded border border-stone-300 bg-white/90 text-stone-800 shadow-sm transition-opacity md:flex ${selectedObject?.kind === "piece" && selectedObject.id === piece.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => {
                       setSelectedObject({ kind: "piece", id: piece.id });
@@ -8228,7 +8921,7 @@ export default function Home() {
                     <Plus size={12} aria-hidden="true" />
                   </button>
                   <button
-                    className="absolute bottom-1 right-1 hidden h-5 w-5 items-center justify-center rounded bg-white/80 text-ink md:flex"
+                    className={`absolute bottom-1 right-1 hidden h-5 w-5 items-center justify-center rounded border border-stone-300 bg-white/90 text-stone-800 shadow-sm transition-opacity md:flex ${selectedObject?.kind === "piece" && selectedObject.id === piece.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => removePiece(piece.id)}
                     aria-label={`Remove ${piece.name}`}
@@ -8240,18 +8933,18 @@ export default function Home() {
             </div>
             </div>
             <div
-              className="absolute left-3 top-3 z-40 flex items-center gap-1 rounded-full border border-stone-300 bg-white/95 p-1 shadow-lg"
+              className="absolute left-3 top-3 z-40 flex items-center gap-1 rounded border border-stone-300 bg-white/95 p-1 shadow-sm"
               onPointerDown={(event) => event.stopPropagation()}
             >
-              <button className="flex h-8 w-8 items-center justify-center rounded-full bg-ink text-sm font-black text-white" onClick={() => zoomByStep(1)} aria-label="Zoom in" title="Zoom in">➕</button>
-              <button className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-sm font-black text-ink" onClick={() => zoomByStep(-1)} aria-label="Zoom out" title="Zoom out">➖</button>
-              <button className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-sm font-black text-ink" onClick={() => setZoomCentered(100)} aria-label="Reset view" title="Reset view">⌂</button>
-              <button className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-sm font-black text-ink" onClick={fitToScreen} aria-label="Fit to screen" title="Fit to screen">🎯</button>
-              <span className="px-2 text-[11px] font-black text-stone-700">{zoomPercent}%</span>
+              <button className="flex h-8 w-8 items-center justify-center rounded bg-stone-900 text-sm font-semibold text-white" onClick={() => zoomByStep(1)} aria-label="Zoom in" title="Zoom in">+</button>
+              <button className="flex h-8 w-8 items-center justify-center rounded border border-stone-300 bg-white text-sm font-semibold text-stone-800" onClick={() => zoomByStep(-1)} aria-label="Zoom out" title="Zoom out">−</button>
+              <button className="flex h-8 w-8 items-center justify-center rounded border border-stone-300 bg-white text-sm font-semibold text-stone-800" onClick={() => setZoomCentered(100)} aria-label="Reset view" title="Reset view">⌂</button>
+              <button className="flex h-8 w-8 items-center justify-center rounded border border-stone-300 bg-white px-2 text-xs font-semibold text-stone-800" onClick={fitToScreen} aria-label="Fit to screen" title="Fit to screen">Fit</button>
+              <span className="px-2 text-[11px] font-semibold text-stone-700">{zoomPercent}%</span>
             </div>
             {(layoutGeometry.width > 220 || layoutGeometry.depth > 160 || zoomPercent > 100) && (
               <div
-                className={`absolute bottom-3 right-3 z-40 rounded border border-stone-400 bg-white/95 p-1.5 shadow-lg transition-all ${miniMapExpanded ? "h-32 w-44" : "h-[88px] w-[120px]"}`}
+                className={`absolute bottom-3 right-3 z-40 rounded border border-stone-300 bg-white/95 p-1.5 shadow-sm transition-all ${miniMapExpanded ? "h-32 w-44" : "h-[88px] w-[120px]"}`}
                 onPointerDown={(event) => event.stopPropagation()}
                 onDoubleClick={() => setMiniMapExpanded((current) => !current)}
                 title="Double click to expand minimap"
@@ -8264,7 +8957,7 @@ export default function Home() {
                   {miniMapExpanded ? "−" : "+"}
                 </button>
                 <div
-                  className="relative h-full w-full cursor-crosshair overflow-hidden bg-stone-200"
+                  className="relative h-full w-full cursor-crosshair overflow-hidden bg-stone-100"
                   onPointerDown={startMiniMapDrag}
                   onPointerMove={(event) => {
                     if (event.buttons === 1) moveViewportFromMiniMap(event);
@@ -8273,7 +8966,7 @@ export default function Home() {
                   {layoutGeometry.tableSections.map((section) => (
                     <div
                       key={`mini-${section.id}`}
-                      className="absolute border border-stone-600 bg-[#d9d2bf]"
+                      className="absolute border border-stone-400 bg-[#d9d2bf]"
                       style={{
                         left: `${(section.x / layoutGeometry.width) * 100}%`,
                         top: `${(section.y / layoutGeometry.depth) * 100}%`,
@@ -8285,7 +8978,7 @@ export default function Home() {
                   {visiblePieces.slice(0, 80).map((piece) => (
                     <div
                       key={`mini-piece-${piece.id}`}
-                      className={`absolute ${piece.type === "road" ? "bg-slate-500" : piece.type === "future" ? "border border-emerald-600/40 bg-emerald-300/25" : "bg-yellow-400"}`}
+                      className={`absolute ${piece.type === "road" ? "bg-slate-500/70" : piece.type === "future" ? "border border-emerald-700/20 bg-emerald-200/15" : "bg-stone-500/45"}`}
                       style={{
                         left: `${(piece.x / layoutGeometry.width) * 100}%`,
                         top: `${(piece.y / layoutGeometry.depth) * 100}%`,
@@ -8356,26 +9049,78 @@ export default function Home() {
             <div className="mt-4 grid grid-cols-2 gap-2">
               {spaceFillOptions.map((option) => {
                 const selected = spaceFillChoices.includes(option.value);
+                const sizeOptions = spaceFillSizeOptionsFor(option.value);
+                const sizeSelection = spaceFillSizeSelectionFor(option.value);
                 return (
-                  <button
+                  <div
                     key={option.value}
-                    className={`rounded border px-3 py-2 text-left text-sm font-medium ${
+                    className={`rounded border p-3 text-left text-sm font-medium ${
                       selected
                         ? "border-ink bg-ink text-white"
                         : "border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
                     }`}
-                    onClick={() =>
-                      setSpaceFillChoices((current) => {
-                        if (option.value === "decide") return ["decide"];
-                        const withoutDecide = current.filter((choice) => choice !== "decide");
-                        return withoutDecide.includes(option.value)
-                          ? withoutDecide.filter((choice) => choice !== option.value)
-                          : [...withoutDecide, option.value];
-                      })
-                    }
                   >
-                    {option.label}
-                  </button>
+                    <button
+                      className="w-full text-left"
+                      onClick={() =>
+                        setSpaceFillChoices((current) => {
+                          if (option.value === "decide") return ["decide"];
+                          const withoutDecide = current.filter((choice) => choice !== "decide");
+                          return withoutDecide.includes(option.value)
+                            ? withoutDecide.filter((choice) => choice !== option.value)
+                            : [...withoutDecide, option.value];
+                        })
+                      }
+                    >
+                      <span className="block">{option.label}</span>
+                      {selected && option.value !== "open-space" && (
+                        <span className="mt-1 block text-xs opacity-80">{formatSpaceFillSize(option.value)}</span>
+                      )}
+                    </button>
+                    {selected && sizeOptions.length > 0 && (
+                      <div className="mt-2 grid grid-cols-2 gap-1">
+                        {sizeOptions.map((size) => (
+                          <button
+                            key={size}
+                            className={`rounded border px-2 py-1 text-xs font-semibold ${sizeSelection.size === size ? "border-white bg-white text-ink" : "border-white/40 text-current"}`}
+                            onClick={() => updateSpaceFillSize(option.value, { size })}
+                          >
+                            {size === "wide" ? "XL" : addOnSizeLabels[size].split(" ")[0]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selected && sizeSelection.size === "custom" && option.value !== "future-corner" && option.value !== "open-space" && option.value !== "decide" && (
+                      <div className="mt-2 grid grid-cols-2 gap-1">
+                        <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wide">
+                          Width
+                          <select
+                            value={snapPlanningModuleDimension(sizeSelection.customWidth)}
+                            onChange={(event) => updateSpaceFillSize(option.value, { customWidth: Number(event.target.value) })}
+                            className="h-8 w-full rounded border border-stone-300 px-2 text-xs text-ink"
+                            aria-label={`${option.label} custom width studs`}
+                          >
+                            {planningModuleSizeOptions.map((value) => (
+                              <option key={value} value={value}>{value}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wide">
+                          Depth
+                          <select
+                            value={snapPlanningModuleDimension(sizeSelection.customDepth)}
+                            onChange={(event) => updateSpaceFillSize(option.value, { customDepth: Number(event.target.value) })}
+                            className="h-8 w-full rounded border border-stone-300 px-2 text-xs text-ink"
+                            aria-label={`${option.label} custom depth studs`}
+                          >
+                            {planningModuleSizeOptions.map((value) => (
+                              <option key={value} value={value}>{value}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -8385,14 +9130,14 @@ export default function Home() {
                 onClick={() => {
                   setSpaceFillChoices(["open-space"]);
                   setShowSpaceFillPrompt(false);
-                  generateLayout(["open-space"]);
+                  generateBestLayout(["open-space"]);
                 }}
               >
                 Leave open
               </button>
               <button
                 className="h-10 rounded bg-ink px-4 text-sm font-medium text-white hover:bg-black"
-                onClick={() => generateLayout(spaceFillChoices.length > 0 ? spaceFillChoices : ["decide"])}
+                onClick={() => generateBestLayout(spaceFillChoices)}
               >
                 Complete Blueprint
               </button>
@@ -8402,7 +9147,17 @@ export default function Home() {
       )}
       {showLayoutFeedbackPrompt && planningMode === "auto" && (
         <div className="fixed bottom-5 right-5 z-50 w-full max-w-sm rounded border border-stone-300 bg-white p-4 shadow-xl">
-          <h2 className="text-sm font-black text-ink">Was this layout useful?</h2>
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-sm font-black text-ink">Was this layout useful?</h2>
+            <button
+              className="-mr-1 -mt-1 rounded px-2 py-1 text-sm font-black text-stone-500 hover:bg-stone-100 hover:text-ink"
+              onClick={() => setShowLayoutFeedbackPrompt(false)}
+              aria-label="Close layout feedback"
+              title="Close"
+            >
+              ×
+            </button>
+          </div>
           <div className="mt-3 flex gap-2">
             <button className="h-9 flex-1 rounded bg-lime-600 px-3 text-sm font-black text-white hover:bg-lime-700" onClick={() => submitLayoutFeedback(true)}>
               👍 Yes
@@ -8432,20 +9187,6 @@ export default function Home() {
               </div>
             </div>
           )}
-        </div>
-      )}
-      {blueprintReady && planningMode === "auto" && (
-        <div className="fixed bottom-5 left-5 z-40 hidden w-full max-w-sm rounded border border-yellow-300 bg-yellow-50 p-4 shadow-xl md:block">
-          <h2 className="text-sm font-black text-ink">Want access to future features?</h2>
-          <p className="mt-2 text-xs font-semibold leading-5 text-stone-700">
-            Join the waitlist for Train Planner V2, raised layout planning, advanced city ratings, full manual build mode and saved projects.
-          </p>
-          <button
-            className="mt-3 rounded bg-brick px-4 py-2 text-sm font-black text-white hover:bg-red-700"
-            onClick={() => setActiveModal("waitlist")}
-          >
-            Join Waitlist
-          </button>
         </div>
       )}
       {showClearLayoutPrompt && (
@@ -8569,6 +9310,50 @@ export default function Home() {
           </div>
         </div>
       )}
+      {activeModal === "analytics" && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto bg-stone-950/55 p-4">
+          <div className="mx-auto my-8 w-full max-w-4xl rounded border border-stone-300 bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-black text-ink">Blueprint V1 Metrics</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+                  Local beta snapshot from this browser. Use Vercel Analytics for production traffic and full visitor reporting.
+                </p>
+              </div>
+              <button className="rounded border border-stone-300 px-3 py-2 text-sm font-semibold text-ink hover:bg-stone-100" onClick={() => setActiveModal(null)}>
+                Close
+              </button>
+            </div>
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              {[
+                ["Homepage visitors", analyticsDashboardMetrics.homepageViews],
+                ["Create My City clicks", analyticsDashboardMetrics.createClicks],
+                ["Wizard completion rate", `${analyticsDashboardMetrics.wizardCompletionRate}%`],
+                ["Layout generations", analyticsDashboardMetrics.layoutGenerations],
+                ["Average city rating", `${analyticsDashboardMetrics.averageCityRating}%`],
+                ["Generate Another Version rate", `${analyticsDashboardMetrics.generateAnotherRate}%`],
+                ["Export PNG rate", `${analyticsDashboardMetrics.exportRate}%`],
+                ["Feedback submissions", analyticsDashboardMetrics.feedbackSubmissions],
+                ["Waitlist signups", analyticsDashboardMetrics.waitlistSignups],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded border border-stone-200 bg-stone-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-wide text-stone-500">{label}</p>
+                  <p className="mt-2 text-3xl font-black text-ink">{value}</p>
+                </div>
+              ))}
+            </div>
+            <section className="mt-6 rounded border border-sky-200 bg-sky-50 p-4">
+              <h3 className="text-sm font-black uppercase tracking-wide text-sky-950">V1 success targets</h3>
+              <div className="mt-3 grid gap-2 text-sm font-semibold text-sky-950 md:grid-cols-2">
+                <p>Create My City click rate: {analyticsDashboardMetrics.createClickRate}% / target 50%+</p>
+                <p>Wizard completion rate: {analyticsDashboardMetrics.wizardCompletionRate}% / target 30%+</p>
+                <p>Layout generation events: {analyticsDashboardMetrics.layoutGenerations}</p>
+                <p>Waitlist signups: {analyticsDashboardMetrics.waitlistSignups}</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
       {activeModal === "roadmap" && (
         <div className="fixed inset-0 z-[60] overflow-y-auto bg-stone-950/55 p-4">
           <div className="mx-auto my-8 w-full max-w-4xl rounded border border-stone-300 bg-white p-6 shadow-xl">
@@ -8615,7 +9400,7 @@ export default function Home() {
                 </div>
               </section>
             )}
-            <button className="mt-6 rounded bg-ink px-4 py-2 text-sm font-black text-white hover:bg-black" onClick={() => setActiveModal("featureRequest")}>
+            <button className="mt-6 rounded bg-ink px-4 py-2 text-sm font-black text-white hover:bg-black" onClick={() => openModal("featureRequest")}>
               Feedback
             </button>
           </div>
